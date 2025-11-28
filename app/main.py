@@ -115,6 +115,20 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.middleware("http")
 async def add_cors_headers_middleware(request: Request, call_next):
     """Add CORS headers to all responses and catch all exceptions."""
+    # Handle OPTIONS preflight requests explicitly
+    if request.method == "OPTIONS":
+        origin = get_origin_header(request)
+        return JSONResponse(
+            status_code=200,
+            content={},
+            headers={
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Methods": "*",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Max-Age": "3600",
+            }
+        )
+    
     try:
         response = await call_next(request)
         # Add CORS headers to successful responses

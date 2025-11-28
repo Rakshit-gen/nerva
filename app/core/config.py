@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     
     # CORS - use string to avoid Pydantic parsing issues
-    CORS_ORIGINS_STR: str = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    # Default to "*" to allow all origins if not set (for easier deployment)
+    CORS_ORIGINS_STR: str = os.getenv("CORS_ORIGINS", "*")
     
     # Database - Neon PostgreSQL
     DATABASE_URL: str = os.getenv(

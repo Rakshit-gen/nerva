@@ -47,7 +47,7 @@ class TTSService:
                 # Check for GPU
                 self._device = "cuda" if torch.cuda.is_available() else "cpu"
                 
-                # Load XTTS model
+                # Load TTS model
                 self._tts = TTS(settings.TTS_MODEL).to(self._device)
                 
             except ImportError:
@@ -55,6 +55,29 @@ class TTSService:
                     "Coqui TTS not installed. Run: pip install TTS"
                 )
         return self._tts
+    
+    def unload_model(self):
+        """Unload TTS model to free memory."""
+        if self._tts is not None:
+            try:
+                # Move model to CPU and delete
+                if hasattr(self._tts, 'to'):
+                    self._tts = self._tts.to('cpu')
+                del self._tts
+                self._tts = None
+                
+                # Force garbage collection
+                import gc
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
+            except Exception as e:
+                print(f"Warning: Error unloading TTS model: {e}")
+    
+    def __del__(self):
+        """Cleanup on deletion."""
+        self.unload_model()
     
     def synthesize(
         self,

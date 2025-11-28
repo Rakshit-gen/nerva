@@ -255,6 +255,32 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
             db.close()
         except Exception:
             pass
+        
+        # Cleanup: Free memory and remove temporary files
+        try:
+            import gc
+            import torch
+            import shutil
+            
+            # Force garbage collection
+            gc.collect()
+            
+            # Clear PyTorch cache if available
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # Clean up temporary output directory (keep final files, remove intermediate)
+            # Note: We keep the final audio/cover files, but remove segment files
+            output_dir = os.path.join(settings.OUTPUT_DIR, episode_id)
+            segments_dir = os.path.join(output_dir, "segments")
+            if os.path.exists(segments_dir):
+                try:
+                    shutil.rmtree(segments_dir)
+                    print(f"Cleaned up segments directory: {segments_dir}")
+                except Exception as cleanup_error:
+                    print(f"Warning: Could not clean segments directory: {cleanup_error}")
+        except Exception as cleanup_error:
+            print(f"Warning: Memory cleanup failed: {cleanup_error}")
 
 
 def extract_content_sync(episode: Episode) -> str:
@@ -365,26 +391,33 @@ def synthesize_audio_sync(
 ) -> list:
     """Synthesize audio for script segments."""
     from app.services.tts import TTSService
+    import gc
     
     tts = TTSService()
     
-    # Build voice mapping from personas
-    voice_mapping = {}
-    for i, persona in enumerate(personas or []):
-        name = persona.get("name", f"Speaker{i}")
-        # Alternate between male and female voices
-        voice_id = "default_male" if i % 2 == 0 else "default_female"
-        voice_mapping[name] = voice_id
-    
-    segments_dir = os.path.join(output_dir, "segments")
-    
-    result = tts.synthesize_segments(
-        segments=segments,
-        output_dir=segments_dir,
-        voice_mapping=voice_mapping,
-    )
-    
-    return result
+    try:
+        # Build voice mapping from personas
+        voice_mapping = {}
+        for i, persona in enumerate(personas or []):
+            name = persona.get("name", f"Speaker{i}")
+            # Alternate between male and female voices
+            voice_id = "default_male" if i % 2 == 0 else "default_female"
+            voice_mapping[name] = voice_id
+        
+        segments_dir = os.path.join(output_dir, "segments")
+        
+        result = tts.synthesize_segments(
+            segments=segments,
+            output_dir=segments_dir,
+            voice_mapping=voice_mapping,
+        )
+        
+        return result
+    finally:
+        # Unload TTS model to free memory
+        tts.unload_model()
+        del tts
+        gc.collect()
 
 
 def mix_audio_sync(segments: list, output_dir: str) -> Dict[str, Any]:
