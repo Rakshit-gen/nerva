@@ -38,16 +38,45 @@ def update_episode_status(
     error: str = None,
 ):
     """Update episode status in database."""
-    episode = db_session.query(Episode).filter(Episode.id == episode_id).first()
-    if episode:
-        episode.status = status
-        episode.progress = progress
-        episode.status_message = message
-        if error:
-            episode.error_message = error
-        if status == JobStatus.COMPLETED:
-            episode.completed_at = datetime.utcnow()
-        db_session.commit()
+    from sqlalchemy.exc import PendingRollbackError, InvalidRequestError
+    
+    try:
+        episode = db_session.query(Episode).filter(Episode.id == episode_id).first()
+        if episode:
+            episode.status = status
+            episode.progress = progress
+            episode.status_message = message
+            if error:
+                episode.error_message = error
+            if status == JobStatus.COMPLETED:
+                episode.completed_at = datetime.utcnow()
+            db_session.commit()
+    except (PendingRollbackError, InvalidRequestError) as e:
+        # Session is in invalid state - rollback and retry
+        try:
+            db_session.rollback()
+            # Retry the update after rollback
+            episode = db_session.query(Episode).filter(Episode.id == episode_id).first()
+            if episode:
+                episode.status = status
+                episode.progress = progress
+                episode.status_message = message
+                if error:
+                    episode.error_message = error
+                if status == JobStatus.COMPLETED:
+                    episode.completed_at = datetime.utcnow()
+                db_session.commit()
+        except Exception as retry_error:
+            # If retry also fails, log and give up
+            print(f"Warning: Failed to update episode status after rollback: {retry_error}")
+    except Exception as e:
+        # Other errors - rollback and log
+        try:
+            db_session.rollback()
+        except Exception:
+            pass
+        # Log but don't raise - we don't want status updates to crash the job
+        print(f"Warning: Failed to update episode status: {e}")
 
 
 def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[str, Any]:
@@ -189,16 +218,43 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
         }
         
     except Exception as e:
-        # Handle failure
+        # Handle failure - rollback any pending transaction
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        
         error_msg = str(e)
-        update_episode_status(
-            db, episode_id, JobStatus.FAILED, 0,
-            "Processing failed", error_msg
-        )
+        print(f"Error processing episode {episode_id}: {error_msg}")
+        
+        # Try to update status, but use a fresh session if current one is invalid
+        try:
+            update_episode_status(
+                db, episode_id, JobStatus.FAILED, 0,
+                "Processing failed", error_msg
+            )
+        except Exception as status_error:
+            # If update fails, try with a fresh session
+            print(f"Failed to update status with current session: {status_error}")
+            try:
+                fresh_db = SessionLocal()
+                try:
+                    update_episode_status(
+                        fresh_db, episode_id, JobStatus.FAILED, 0,
+                        "Processing failed", error_msg
+                    )
+                finally:
+                    fresh_db.close()
+            except Exception:
+                print(f"Failed to update status even with fresh session")
+        
         raise
         
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 def extract_content_sync(episode: Episode) -> str:
