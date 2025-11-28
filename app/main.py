@@ -24,6 +24,19 @@ async def lifespan(app: FastAPI):
     pass
 
 
+# Parse CORS origins from environment variable
+def get_cors_origins():
+    """Parse CORS origins from environment variable."""
+    if not settings.CORS_ORIGINS_STR:
+        return ["*"]
+    origins = [origin.strip() for origin in settings.CORS_ORIGINS_STR.split(",") if origin.strip()]
+    return origins if origins else ["*"]
+
+
+cors_origins = get_cors_origins()
+allow_all_origins = "*" in cors_origins
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="AI-powered podcast generation from various content sources",
@@ -32,27 +45,37 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware - Allow all origins
-# Note: When allow_origins=["*"], credentials must be False
+# CORS middleware - Use configured origins
 # Add CORS middleware first so it processes all responses
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins
-    allow_credentials=False,  # Must be False when using "*"
+    allow_origins=cors_origins,  # Use parsed origins from environment
+    allow_credentials=not allow_all_origins,  # Can use credentials if not "*"
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
     expose_headers=["*"],  # Expose all headers
 )
 
+
+def get_origin_header(request: Request) -> str:
+    """Get the appropriate origin header value for CORS."""
+    if allow_all_origins:
+        return "*"
+    origin = request.headers.get("origin")
+    if origin and origin in cors_origins:
+        return origin
+    return cors_origins[0] if cors_origins else "*"
+
 # Exception handlers to ensure CORS headers on all error responses
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Handle HTTP exceptions with CORS headers."""
+    origin = get_origin_header(request)
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
         headers={
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Methods": "*",
             "Access-Control-Allow-Headers": "*",
         }
@@ -63,11 +86,12 @@ async def global_exception_handler(request: Request, exc: Exception):
     """Handle all exceptions and ensure CORS headers are included."""
     import traceback
     traceback.print_exc()  # Print for debugging
+    origin = get_origin_header(request)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": str(exc)},
         headers={
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Methods": "*",
             "Access-Control-Allow-Headers": "*",
         }
@@ -76,11 +100,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Handle validation errors with CORS headers."""
+    origin = get_origin_header(request)
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={"detail": exc.errors()},
         headers={
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Methods": "*",
             "Access-Control-Allow-Headers": "*",
         }
@@ -93,7 +118,8 @@ async def add_cors_headers_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
         # Add CORS headers to successful responses
-        response.headers["Access-Control-Allow-Origin"] = "*"
+        origin = get_origin_header(request)
+        response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Methods"] = "*"
         response.headers["Access-Control-Allow-Headers"] = "*"
         return response
@@ -101,15 +127,16 @@ async def add_cors_headers_middleware(request: Request, call_next):
         # Catch any unhandled exceptions and return JSON with CORS headers
         import traceback
         traceback.print_exc()
+        origin = get_origin_header(request)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": str(exc)},
             headers={
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": origin,
                 "Access-Control-Allow-Methods": "*",
                 "Access-Control-Allow-Headers": "*",
             }
-)
+        )
 
 # Include API routes
 app.include_router(api_v1_router, prefix=settings.API_V1_PREFIX)
