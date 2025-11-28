@@ -2,6 +2,9 @@
 # Start both web server and worker in the same process
 # This allows running both on Render's free tier
 
+# Set PYTHONPATH to ensure app module can be found
+export PYTHONPATH=/app:$PYTHONPATH
+
 # Start worker in background
 echo "Starting RQ worker..."
 python -m app.workers.worker &
@@ -10,7 +13,7 @@ echo "Worker started with PID: $WORKER_PID"
 
 # Start web server (this blocks)
 echo "Starting FastAPI web server on port ${PORT:-8000}..."
-uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+cd /app && python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
 
 # If web server exits, kill worker
 echo "Web server stopped, shutting down worker..."
