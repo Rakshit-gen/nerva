@@ -56,7 +56,8 @@ Thumbs.db
 *.pt
 *.bin
 *.safetensors
-models/
+/models/
+!app/models/
 
 # Temporary files
 tmp/
