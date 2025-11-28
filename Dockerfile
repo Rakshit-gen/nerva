@@ -8,6 +8,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsndfile1 \
+    espeak-ng \
     git \
     && rm -rf /var/lib/apt/lists/*
 
@@ -23,8 +24,12 @@ COPY . .
 # Create directories for uploads and outputs
 RUN mkdir -p /tmp/podcast_uploads /tmp/podcast_outputs
 
+# Make start script executable
+RUN chmod +x start.sh
+
 # Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run both web server and worker
+# Use PORT environment variable (Render sets this)
+CMD ["./start.sh"]
