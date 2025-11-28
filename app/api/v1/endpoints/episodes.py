@@ -53,13 +53,13 @@ async def create_episode(
     
     # Enqueue processing job (gracefully handle Redis connection errors)
     try:
-    job_id = enqueue_job(
-        process_episode_task,
-        episode_id=episode.id,
-        generate_cover=request.generate_cover,
-    )
-    episode.job_id = job_id
-    episode.status_message = "Processing started"
+        job_id = enqueue_job(
+            process_episode_task,
+            episode_id=episode.id,
+            generate_cover=request.generate_cover,
+        )
+        episode.job_id = job_id
+        episode.status_message = "Processing started"
     except Exception as e:
         # If Redis is unavailable, continue without job queuing
         # The episode can still be created, but processing won't start automatically
