@@ -41,6 +41,7 @@ Pillow>=10.3.0
 # Utilities
 python-dotenv==1.0.1
 python-multipart==0.0.9
+boto3==1.34.34  # AWS S3 storage
 
 # Development
 pytest>=7.0.0,<8.0.0

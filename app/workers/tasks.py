@@ -170,8 +170,25 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
             
             audio_result = mix_audio_sync(audio_segments, output_dir)
             
-            # Update episode with audio info
-            episode.audio_url = f"/api/v1/export/{episode_id}/audio"
+            # Upload audio to storage (S3 or keep local)
+            audio_path = os.path.join(output_dir, "podcast.mp3")
+            from app.services.storage import StorageService
+            storage = StorageService()
+            
+            try:
+                audio_url = storage.upload_file(
+                    local_path=audio_path,
+                    remote_path=f"episodes/{episode_id}/audio.mp3",
+                    content_type="audio/mpeg",
+                    public=True,
+                )
+                episode.audio_url = audio_url
+                print(f"Audio uploaded to: {audio_url}")
+            except Exception as upload_error:
+                print(f"Warning: Failed to upload audio to storage: {upload_error}")
+                # Fallback to local path
+                episode.audio_url = f"/api/v1/export/{episode_id}/audio"
+            
             episode.duration_seconds = audio_result["duration_seconds"]
             audio_available = True
             
@@ -194,7 +211,24 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
                 
                 cover_path = generate_cover_sync(episode, output_dir)
                 
-                episode.cover_url = f"/api/v1/export/{episode_id}/cover"
+                # Upload cover to storage (S3 or keep local)
+                from app.services.storage import StorageService
+                storage = StorageService()
+                
+                try:
+                    cover_url = storage.upload_file(
+                        local_path=cover_path,
+                        remote_path=f"episodes/{episode_id}/cover.png",
+                        content_type="image/png",
+                        public=True,
+                    )
+                    episode.cover_url = cover_url
+                    print(f"Cover uploaded to: {cover_url}")
+                except Exception as upload_error:
+                    print(f"Warning: Failed to upload cover to storage: {upload_error}")
+                    # Fallback to local path
+                    episode.cover_url = f"/api/v1/export/{episode_id}/cover"
+                
                 db.commit()
             except Exception as e:
                 # Cover generation failed, but don't fail the whole job

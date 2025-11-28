@@ -2,7 +2,7 @@
 Export API endpoints for downloading generated content.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import os
@@ -88,7 +88,11 @@ async def download_audio(
     if not episode.audio_url:
         raise HTTPException(status_code=404, detail="Audio file not found")
     
-    # Get file path from URL
+    # If audio_url is an S3 URL (starts with http:// or https://), redirect to it
+    if episode.audio_url.startswith(("http://", "https://")):
+        return RedirectResponse(url=episode.audio_url, status_code=302)
+    
+    # Otherwise, serve from local filesystem
     audio_path = os.path.join(settings.OUTPUT_DIR, episode.id, "podcast.mp3")
     
     if not os.path.exists(audio_path):
@@ -190,6 +194,11 @@ async def download_cover(
     if not episode.cover_url:
         raise HTTPException(status_code=404, detail="Cover image not found")
     
+    # If cover_url is an S3 URL (starts with http:// or https://), redirect to it
+    if episode.cover_url.startswith(("http://", "https://")):
+        return RedirectResponse(url=episode.cover_url, status_code=302)
+    
+    # Otherwise, serve from local filesystem
     cover_path = os.path.join(settings.OUTPUT_DIR, episode.id, "cover.png")
     
     if not os.path.exists(cover_path):

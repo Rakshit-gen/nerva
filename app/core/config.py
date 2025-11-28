@@ -60,9 +60,19 @@ class Settings(BaseSettings):
     SDXL_MODEL: str = "stabilityai/stable-diffusion-xl-base-1.0"
     
     # File storage
-    UPLOAD_DIR: str = "/tmp/podcast_uploads"
-    OUTPUT_DIR: str = "/tmp/podcast_outputs"
+    # Use environment variable for OUTPUT_DIR to support Render Disk
+    # Render Disk mounts at /opt/render/project/src/.render/persistent-disk
+    # Default to /tmp for local development
+    OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "/tmp/podcast_outputs")
+    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "/tmp/podcast_uploads")
     MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024  # 50MB
+    
+    # S3 Storage (optional - if set, files will be uploaded to S3)
+    STORAGE_TYPE: str = os.getenv("STORAGE_TYPE", "local")  # "local" or "s3"
+    AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "")
+    S3_REGION: str = os.getenv("S3_REGION", "us-east-1")
     
     # Worker settings
     WORKER_QUEUE: str = "podcast_jobs"
