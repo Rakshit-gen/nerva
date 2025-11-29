@@ -18,10 +18,13 @@ RUN apt-get update && apt-get install -y \
 # This layer is cached separately from app code
 COPY requirements-base.txt .
 
-# Install base Python dependencies with pip cache
-# Using BuildKit cache mount for faster rebuilds
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir -r requirements-base.txt
+# Install base Python dependencies
+# Upgrade pip first for better compatibility
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install base dependencies with extended timeout
+# Render may have slower network, so we increase timeout
+RUN pip install --no-cache-dir --default-timeout=300 -r requirements-base.txt
 
 # Copy app requirements (if different from base)
 # This allows app-specific deps to change without rebuilding base
@@ -29,8 +32,7 @@ COPY requirements.txt .
 
 # Install any additional dependencies from requirements.txt
 # (Most deps are in requirements-base.txt, this handles extras)
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --default-timeout=300 -r requirements.txt
 
 # Copy application code (changes frequently - invalidates cache here)
 # This is the last layer that changes often
