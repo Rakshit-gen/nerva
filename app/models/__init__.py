@@ -16,7 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 import uuid
 
@@ -25,6 +25,17 @@ from app.core.database import Base
 
 def generate_uuid():
     return str(uuid.uuid4())
+
+
+def format_utc_timestamp(dt):
+    """Format datetime to ISO string with 'Z' suffix for UTC."""
+    if dt is None:
+        return None
+    iso_str = dt.isoformat()
+    # If no timezone info (naive datetime), assume UTC and add 'Z'
+    if not iso_str.endswith('Z') and '+' not in iso_str[-6:]:
+        return iso_str + 'Z'
+    return iso_str
 
 
 class JobStatus(str, enum.Enum):
@@ -82,8 +93,9 @@ class Episode(Base):
     error_message = Column(Text, nullable=True)
     
     # Timestamps (UTC)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.utcnow(), index=True)
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
+    # Use func.now() for database-level timestamp (handles timezone correctly)
+    created_at = Column(DateTime(timezone=True), default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
     
     # Composite indexes for common query patterns
@@ -114,17 +126,6 @@ class Episode(Base):
             "status_message": self.status_message,
             "error_message": self.error_message,
             # Ensure UTC timestamps are properly formatted with 'Z' suffix for frontend
-            # If datetime is naive (no timezone), assume UTC and add 'Z'
-            # If datetime is aware, isoformat() already includes timezone info
-            def format_utc_timestamp(dt):
-                if dt is None:
-                    return None
-                iso_str = dt.isoformat()
-                # If no timezone info (naive datetime), assume UTC and add 'Z'
-                if not iso_str.endswith('Z') and '+' not in iso_str[-6:]:
-                    return iso_str + 'Z'
-                return iso_str
-            
             "created_at": format_utc_timestamp(self.created_at),
             "updated_at": format_utc_timestamp(self.updated_at),
             "completed_at": format_utc_timestamp(self.completed_at),
