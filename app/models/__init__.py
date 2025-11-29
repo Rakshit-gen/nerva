@@ -81,10 +81,10 @@ class Episode(Base):
     status_message = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     
-    # Timestamps
-    created_at = Column(DateTime, default=func.now(), index=True)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-    completed_at = Column(DateTime, nullable=True)
+    # Timestamps (UTC)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.utcnow(), index=True)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     
     # Composite indexes for common query patterns
     __table_args__ = (
@@ -113,9 +113,21 @@ class Episode(Base):
             "progress": self.progress,
             "status_message": self.status_message,
             "error_message": self.error_message,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            # Ensure UTC timestamps are properly formatted with 'Z' suffix for frontend
+            # If datetime is naive (no timezone), assume UTC and add 'Z'
+            # If datetime is aware, isoformat() already includes timezone info
+            def format_utc_timestamp(dt):
+                if dt is None:
+                    return None
+                iso_str = dt.isoformat()
+                # If no timezone info (naive datetime), assume UTC and add 'Z'
+                if not iso_str.endswith('Z') and '+' not in iso_str[-6:]:
+                    return iso_str + 'Z'
+                return iso_str
+            
+            "created_at": format_utc_timestamp(self.created_at),
+            "updated_at": format_utc_timestamp(self.updated_at),
+            "completed_at": format_utc_timestamp(self.completed_at),
         }
 
 
