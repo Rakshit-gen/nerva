@@ -141,10 +141,20 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
         
         script_result = generate_script_sync(episode, content)
         
-        # Update episode with script
-        episode.script = script_result["script"]
+        # Update episode with script (truncate if too long to avoid memory issues)
+        script_text = script_result["script"]
+        max_script_length = 100000  # ~100KB limit
+        if len(script_text) > max_script_length:
+            script_text = script_text[:max_script_length] + "\n\n[Script truncated due to length]"
+        
+        episode.script = script_text
         episode.word_count = script_result["word_count"]
         db.commit()
+        
+        # Clear content from memory after processing
+        del content
+        import gc
+        gc.collect()
         
         update_job_progress(50, "Script generated")
         update_episode_status(db, episode_id, JobStatus.PROCESSING, 50, "Script ready")
@@ -199,9 +209,15 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
             update_job_progress(90, "Script ready (audio unavailable)")
             update_episode_status(db, episode_id, JobStatus.PROCESSING, 90, "Script ready (audio unavailable)")
         
-        # Always save the transcript
-        episode.transcript = script_result["script"]
+        # Always save the transcript (reuse script, no need to duplicate)
+        # Transcript is same as script, just store reference to avoid duplication
+        episode.transcript = episode.script  # Reuse script as transcript
         db.commit()
+        
+        # Clear script_result from memory after saving
+        del script_result
+        import gc
+        gc.collect()
         
         # Step 6: Generate cover (95%) - Optional, don't fail if it errors
         if generate_cover:
@@ -295,13 +311,21 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
             import gc
             import torch
             import shutil
+            from app.core.model_cache import get_memory_usage_mb
             
-            # Force garbage collection
-            gc.collect()
+            # Log memory before cleanup
+            memory_before = get_memory_usage_mb()
+            
+            # Force garbage collection multiple times for better cleanup
+            for _ in range(3):
+                gc.collect()
             
             # Clear PyTorch cache if available
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            try:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
             
             # Clean up temporary output directory (keep final files, remove intermediate)
             # Note: We keep the final audio/cover files, but remove segment files
@@ -313,6 +337,12 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
                     print(f"Cleaned up segments directory: {segments_dir}")
                 except Exception as cleanup_error:
                     print(f"Warning: Could not clean segments directory: {cleanup_error}")
+            
+            # Log memory after cleanup
+            memory_after = get_memory_usage_mb()
+            if memory_before > 0:
+                freed = memory_before - memory_after
+                print(f"Memory cleanup: {memory_before:.1f}MB -> {memory_after:.1f}MB (freed {freed:.1f}MB)")
         except Exception as cleanup_error:
             print(f"Warning: Memory cleanup failed: {cleanup_error}")
 
@@ -350,11 +380,12 @@ def chunk_content_sync(
 ):
     """Chunk and embed content (sync version)."""
     from app.services.chunker import TextChunker
-    from app.services.embeddings import EmbeddingService
+    from app.core.model_cache import get_embedding_model
     from app.services.vector_store import VectorStore
     
     chunker = TextChunker(chunk_size=512, chunk_overlap=50)
-    embedding_service = EmbeddingService(use_local=True)
+    # Use cached embedding model instead of creating new instance
+    embedding_service = get_embedding_model()
     vector_store = VectorStore(embedding_service=embedding_service)
     
     # Chunk content

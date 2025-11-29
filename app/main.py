@@ -19,9 +19,22 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     await init_db()
+    
+    # Preload models at startup (cache heavy models)
+    try:
+        from app.core.model_cache import preload_models
+        preload_models()
+    except Exception as e:
+        print(f"Warning: Model preloading failed: {e}")
+    
     yield
-    # Shutdown
-    pass
+    
+    # Shutdown - cleanup
+    try:
+        from app.core.model_cache import clear_model_cache
+        clear_model_cache()
+    except Exception:
+        pass
 
 
 # Parse CORS origins from environment variable

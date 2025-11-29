@@ -203,56 +203,67 @@ class TTSService:
         
         results = []
         
-        for i, segment in enumerate(segments):
-            speaker = segment.get("speaker", "Speaker")
-            text = segment.get("text", "")
+        # Process segments in batches to avoid memory buildup
+        batch_size = 10
+        import gc
+        
+        for batch_start in range(0, len(segments), batch_size):
+            batch = segments[batch_start:batch_start + batch_size]
             
-            if not text.strip():
-                continue
-            
-            # Get voice ID for speaker
-            voice_id = voice_mapping.get(speaker, "default_male")
-            
-            # Generate output path
-            output_path = os.path.join(output_dir, f"segment_{i:04d}.wav")
-            
-            try:
-                # For vits model, alternate between different speaker IDs for variety
-                # Map voice_id to actual speaker parameter
-                model_name = settings.TTS_MODEL.lower()
-                if "vits" in model_name:
-                    # Use different speaker IDs based on voice_id
-                    # p225, p226, p227, p228 are different voices in vctk
-                    speaker_map = {
-                        "default_male": "p225",
-                        "default_female": "p226",
-                    }
-                    actual_speaker = speaker_map.get(voice_id, "p225")
-                    # Update voice config with speaker
-                    voice_config = self.voice_configs.get(voice_id, {})
-                    voice_config = {**voice_config, "speaker": actual_speaker}
-                    self.voice_configs[voice_id] = voice_config
+            for i, segment in enumerate(batch):
+                actual_index = batch_start + i
+                speaker = segment.get("speaker", "Speaker")
+                text = segment.get("text", "")
                 
-                self.synthesize(
-                    text=text,
-                    output_path=output_path,
-                    voice_id=voice_id,
-                )
+                if not text.strip():
+                    continue
                 
-                results.append({
-                    **segment,
-                    "index": i,
-                    "audio_path": output_path,
-                })
+                # Get voice ID for speaker
+                voice_id = voice_mapping.get(speaker, "default_male")
                 
-            except Exception as e:
-                print(f"Warning: Failed to synthesize segment {i}: {e}")
-                results.append({
-                    **segment,
-                    "index": i,
-                    "audio_path": None,
-                    "error": str(e),
-                })
+                # Generate output path
+                output_path = os.path.join(output_dir, f"segment_{actual_index:04d}.wav")
+                
+                try:
+                    # For vits model, alternate between different speaker IDs for variety
+                    # Map voice_id to actual speaker parameter
+                    model_name = settings.TTS_MODEL.lower()
+                    if "vits" in model_name:
+                        # Use different speaker IDs based on voice_id
+                        # p225, p226, p227, p228 are different voices in vctk
+                        speaker_map = {
+                            "default_male": "p225",
+                            "default_female": "p226",
+                        }
+                        actual_speaker = speaker_map.get(voice_id, "p225")
+                        # Update voice config with speaker
+                        voice_config = self.voice_configs.get(voice_id, {})
+                        voice_config = {**voice_config, "speaker": actual_speaker}
+                        self.voice_configs[voice_id] = voice_config
+                    
+                    self.synthesize(
+                        text=text,
+                        output_path=output_path,
+                        voice_id=voice_id,
+                    )
+                    
+                    results.append({
+                        **segment,
+                        "index": actual_index,
+                        "audio_path": output_path,
+                    })
+                    
+                except Exception as e:
+                    print(f"Warning: Failed to synthesize segment {actual_index}: {e}")
+                    results.append({
+                        **segment,
+                        "index": actual_index,
+                        "audio_path": None,
+                        "error": str(e),
+                    })
+            
+            # Force garbage collection after each batch
+            gc.collect()
         
         return results
     

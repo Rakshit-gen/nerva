@@ -125,11 +125,22 @@ async def get_transcript(
     if not episode:
         raise HTTPException(status_code=404, detail="Episode not found")
     
+    # Stream transcript in chunks if very large to avoid memory issues
+    script_text = episode.script or ""
+    transcript_text = episode.transcript or ""
+    
+    # Limit response size to prevent memory issues
+    max_response_size = 50000  # ~50KB limit per field
+    if len(script_text) > max_response_size:
+        script_text = script_text[:max_response_size] + "\n\n[Script truncated]"
+    if len(transcript_text) > max_response_size:
+        transcript_text = transcript_text[:max_response_size] + "\n\n[Transcript truncated]"
+    
     return TranscriptResponse(
         episode_id=episode.id,
         title=episode.title,
-        script=episode.script,
-        transcript=episode.transcript,
+        script=script_text,
+        transcript=transcript_text,
         word_count=episode.word_count,
     )
 

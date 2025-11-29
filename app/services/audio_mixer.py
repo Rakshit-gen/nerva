@@ -69,17 +69,28 @@ class AudioMixer:
         # Create pause segment
         pause = AudioSegment.silent(duration=pause_between_segments)
         
-        # Add each segment
+        # Add each segment - process in chunks to avoid memory issues
         segments_added = 0
-        for segment in segments:
+        max_segments_in_memory = 5  # Process in chunks
+        
+        for i, segment in enumerate(segments):
             audio_path = segment.get("audio_path")
             if not audio_path or not os.path.exists(audio_path):
                 continue
             
             try:
+                # Load segment
                 segment_audio = AudioSegment.from_file(audio_path)
                 combined = combined + pause + segment_audio
                 segments_added += 1
+                
+                # Periodically force garbage collection for long podcasts
+                if segments_added % max_segments_in_memory == 0:
+                    import gc
+                    gc.collect()
+                    # Clear segment from memory after adding
+                    del segment_audio
+                    
             except Exception as e:
                 print(f"Warning: Could not add segment: {e}")
         
@@ -107,6 +118,9 @@ class AudioMixer:
                 print(f"Warning: Could not add background music: {e}")
         
         # Export as MP3
+        duration_ms = len(combined)
+        duration_seconds = duration_ms / 1000
+        
         combined.export(
             output_path,
             format="mp3",
@@ -117,10 +131,15 @@ class AudioMixer:
             },
         )
         
+        # Clear combined audio from memory after export
+        del combined
+        import gc
+        gc.collect()
+        
         return {
             "output_path": output_path,
-            "duration_ms": len(combined),
-            "duration_seconds": len(combined) / 1000,
+            "duration_ms": duration_ms,
+            "duration_seconds": duration_seconds,
             "segments_count": segments_added,
             "file_size_bytes": os.path.getsize(output_path),
         }
