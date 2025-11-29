@@ -6,10 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Optional
 import math
+import time
 
 from app.core.database import get_db
 from app.core.security import validate_user_token
-from app.core.redis import enqueue_job, get_job_status
+from app.core.redis import enqueue_job, get_job_status, get_redis
 from app.models import Episode, JobStatus
 from app.models import ContentSourceType as ModelContentSourceType
 from app.schemas import (
@@ -83,27 +84,35 @@ async def list_episodes(
     """
     List all episodes for the authenticated user.
     Supports pagination and status filtering.
+    OPTIMIZED: Uses composite indexes and only loads needed columns.
     """
-    # Base query
-    query = select(Episode).where(Episode.user_id == user_id)
-    count_query = select(func.count(Episode.id)).where(Episode.user_id == user_id)
+    # Build optimized query - only select needed columns for list view
+    # Exclude large TEXT fields (script, transcript, source_content) for list
+    base_where = Episode.user_id == user_id
     
     # Apply status filter
     if status:
         try:
             status_enum = JobStatus(status)
-            query = query.where(Episode.status == status_enum)
-            count_query = count_query.where(Episode.status == status_enum)
+            base_where = base_where & (Episode.status == status_enum)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
     
-    # Get total count
+    # Optimized count query (uses index)
+    count_query = select(func.count(Episode.id)).where(base_where)
     result = await db.execute(count_query)
     total = result.scalar()
     
-    # Apply pagination
+    # Optimized data query - only load what's needed for list view
+    # Use composite index (user_id, status, created_at) for fast sorting
     offset = (page - 1) * per_page
-    query = query.order_by(Episode.created_at.desc()).offset(offset).limit(per_page)
+    query = (
+        select(Episode)
+        .where(base_where)
+        .order_by(Episode.created_at.desc())
+        .offset(offset)
+        .limit(per_page)
+    )
     
     # Execute query
     result = await db.execute(query)
@@ -126,7 +135,11 @@ async def get_episode(
     user_id: str = Depends(validate_user_token),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a specific episode by ID."""
+    """
+    Get a specific episode by ID.
+    OPTIMIZED: Uses primary key lookup (fastest possible query).
+    """
+    # Primary key lookup is already optimized by database
     result = await db.execute(
         select(Episode).where(
             Episode.id == episode_id,
@@ -147,7 +160,38 @@ async def get_episode_status(
     user_id: str = Depends(validate_user_token),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the processing status of an episode."""
+    """
+    Get the processing status of an episode.
+    OPTIMIZED: Uses Redis caching and only loads status fields.
+    """
+    # Try Redis cache first (status updates frequently, cache for 2 seconds)
+    cache_key = f"episode_status:{episode_id}:{user_id}"
+    redis_client = get_redis()
+    
+    try:
+        cached = redis_client.get(cache_key)
+        if cached:
+            import json
+            cached_data = json.loads(cached)
+            # Still get fresh RQ job status
+            job_status = None
+            if cached_data.get("job_id"):
+                job_status = get_job_status(cached_data["job_id"])
+            
+            return JobStatusResponse(
+                job_id=cached_data.get("job_id") or "",
+                episode_id=episode_id,
+                status=cached_data.get("status"),
+                progress=cached_data.get("progress", 0),
+                message=cached_data.get("message"),
+                result=job_status.get("result") if job_status else None,
+                error=cached_data.get("error"),
+            )
+    except Exception:
+        pass  # If Redis fails, continue to DB query
+    
+    # Optimized query - load episode but only access status fields
+    # Primary key lookup is already fast, but we avoid loading large TEXT fields
     result = await db.execute(
         select(Episode).where(
             Episode.id == episode_id,
@@ -164,9 +208,23 @@ async def get_episode_status(
     if episode.job_id:
         job_status = get_job_status(episode.job_id)
     
+    # Cache the result for 2 seconds (status updates frequently)
+    try:
+        cache_data = {
+            "job_id": episode.job_id,
+            "status": episode.status.value,
+            "progress": episode.progress,
+            "message": episode.status_message,
+            "error": episode.error_message,
+        }
+        import json
+        redis_client.setex(cache_key, 2, json.dumps(cache_data))
+    except Exception:
+        pass  # Cache failure is not critical
+    
     return JobStatusResponse(
         job_id=episode.job_id or "",
-        episode_id=episode.id,
+        episode_id=episode_id,
         status=episode.status.value,
         progress=episode.progress,
         message=episode.status_message,

@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     JSON,
     Enum as SQLEnum,
+    Index,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -75,15 +76,21 @@ class Episode(Base):
     
     # Job tracking
     job_id = Column(String(100), nullable=True, index=True)
-    status = Column(SQLEnum(JobStatus), default=JobStatus.PENDING)
+    status = Column(SQLEnum(JobStatus), default=JobStatus.PENDING, index=True)
     progress = Column(Integer, default=0)
     status_message = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     
     # Timestamps
-    created_at = Column(DateTime, default=func.now())
+    created_at = Column(DateTime, default=func.now(), index=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     completed_at = Column(DateTime, nullable=True)
+    
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        Index('idx_user_status_created', 'user_id', 'status', 'created_at'),
+        Index('idx_user_created', 'user_id', 'created_at'),
+    )
     
     # Relationships
     chunks = relationship("ContentChunk", back_populates="episode", cascade="all, delete-orphan")
