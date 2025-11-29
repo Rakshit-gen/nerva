@@ -2,11 +2,13 @@
 Export API endpoints for downloading generated content.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import os
 import json
+import httpx
+from typing import Optional
 
 from app.core.database import get_db
 from app.core.security import validate_user_token
@@ -88,9 +90,24 @@ async def download_audio(
     if not episode.audio_url:
         raise HTTPException(status_code=404, detail="Audio file not found")
     
-    # If audio_url is an S3 URL (starts with http:// or https://), redirect to it
+    # If audio_url is an S3 URL (starts with http:// or https://), proxy it through backend
+    # This avoids CORS issues since backend can add proper CORS headers
     if episode.audio_url.startswith(("http://", "https://")):
-        return RedirectResponse(url=episode.audio_url, status_code=302)
+        async def stream_s3_file():
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                async with client.stream("GET", episode.audio_url) as response:
+                    response.raise_for_status()
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+        
+        return StreamingResponse(
+            stream_s3_file(),
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": f'attachment; filename="{episode.title.replace(" ", "_")}.mp3"',
+                "Cache-Control": "public, max-age=3600",
+            }
+        )
     
     # Otherwise, serve from local filesystem
     audio_path = os.path.join(settings.OUTPUT_DIR, episode.id, "podcast.mp3")
@@ -205,9 +222,24 @@ async def download_cover(
     if not episode.cover_url:
         raise HTTPException(status_code=404, detail="Cover image not found")
     
-    # If cover_url is an S3 URL (starts with http:// or https://), redirect to it
+    # If cover_url is an S3 URL (starts with http:// or https://), proxy it through backend
+    # This avoids CORS issues since backend can add proper CORS headers
     if episode.cover_url.startswith(("http://", "https://")):
-        return RedirectResponse(url=episode.cover_url, status_code=302)
+        async def stream_s3_file():
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                async with client.stream("GET", episode.cover_url) as response:
+                    response.raise_for_status()
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+        
+        return StreamingResponse(
+            stream_s3_file(),
+            media_type="image/png",
+            headers={
+                "Content-Disposition": f'attachment; filename="{episode.title.replace(" ", "_")}_cover.png"',
+                "Cache-Control": "public, max-age=3600",
+            }
+        )
     
     # Otherwise, serve from local filesystem
     cover_path = os.path.join(settings.OUTPUT_DIR, episode.id, "cover.png")
