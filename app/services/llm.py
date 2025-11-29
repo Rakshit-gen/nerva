@@ -48,7 +48,9 @@ class LLMService:
     def _get_client(self) -> httpx.Client:
         """Get or create HTTP client."""
         if self._http_client is None:
-            self._http_client = httpx.Client(timeout=120.0)
+            # Increased timeout to 180s for large script generation
+            # But we'll also reduce max_tokens to speed things up
+            self._http_client = httpx.Client(timeout=180.0)
         return self._http_client
     
     def generate(
@@ -145,33 +147,81 @@ class LLMService:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
             
-            # Retry logic for rate limits
+            # Retry logic for rate limits and timeouts
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    # Use chat completion API
-                    response = self._hf_client.chat_completion(
-                        messages=messages,
-                        model=self.hf_model,
-                        max_tokens=max_tokens,
-                        temperature=temperature,
-                    )
+                    print(f"🔄 [LLM] Calling HuggingFace API (attempt {attempt + 1}/{max_retries})...")
+                    start_time = time.time()
+                    
+                    # Use chat completion API with timeout
+                    try:
+                        response = self._hf_client.chat_completion(
+                            messages=messages,
+                            model=self.hf_model,
+                            max_tokens=max_tokens,
+                            temperature=temperature,
+                        )
+                    except Exception as api_error:
+                        # Check for timeout or connection errors
+                        error_str = str(api_error).lower()
+                        if any(keyword in error_str for keyword in ["timeout", "timed out", "connection", "network"]):
+                            if attempt < max_retries - 1:
+                                wait_time = (attempt + 1) * 10
+                                print(f"⏱️  [LLM] API timeout/connection error, waiting {wait_time}s before retry...")
+                                time.sleep(wait_time)
+                                continue
+                            else:
+                                raise RuntimeError(f"HuggingFace API timeout after {max_retries} attempts: {api_error}")
+                        raise
+                    
+                    elapsed = time.time() - start_time
+                    print(f"✅ [LLM] API call completed in {elapsed:.1f}s")
                     
                     # Extract the response text
                     if hasattr(response, 'choices') and response.choices:
-                        return response.choices[0].message.content
-                    return str(response)
-                    
-                except Exception as e:
-                    error_str = str(e)
-                    if "429" in error_str and attempt < max_retries - 1:
-                        # Rate limited, wait and retry
-                        wait_time = (attempt + 1) * 5
-                        print(f"Rate limited, waiting {wait_time}s before retry...")
-                        time.sleep(wait_time)
-                        continue
+                        content = response.choices[0].message.content
+                        if not content or len(content.strip()) == 0:
+                            raise RuntimeError("HuggingFace API returned empty response")
+                        return content
+                    elif hasattr(response, 'generated_text'):
+                        return response.generated_text
                     else:
-                        raise RuntimeError(f"HuggingFace API error: {e}")
+                        # Try to extract from string representation
+                        response_str = str(response)
+                        if response_str and len(response_str.strip()) > 0:
+                            return response_str
+                        raise RuntimeError(f"HuggingFace API returned invalid response format: {type(response)}")
+                    
+                except RuntimeError:
+                    # Re-raise RuntimeErrors (our custom errors)
+                    raise
+                except Exception as e:
+                    error_str = str(e).lower()
+                    # Check for rate limits
+                    if "429" in str(e) or "rate limit" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = (attempt + 1) * 10
+                            print(f"⏸️  [LLM] Rate limited, waiting {wait_time}s before retry...")
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            raise RuntimeError(f"HuggingFace API rate limit exceeded after {max_retries} attempts")
+                    # Check for authentication errors
+                    elif "401" in str(e) or "unauthorized" in error_str or "token" in error_str:
+                        raise RuntimeError(f"HuggingFace API authentication failed. Please check your HF_API_TOKEN: {e}")
+                    # Check for model errors
+                    elif "model" in error_str or "not found" in error_str:
+                        raise RuntimeError(f"HuggingFace model error: {e}")
+                    # Other errors
+                    else:
+                        if attempt < max_retries - 1:
+                            wait_time = (attempt + 1) * 5
+                            print(f"⚠️  [LLM] API error (attempt {attempt + 1}), waiting {wait_time}s before retry: {e}")
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            raise RuntimeError(f"HuggingFace API error after {max_retries} attempts: {e}")
         
         # Fallback to direct HTTP if huggingface_hub not available
         client = self._get_client()

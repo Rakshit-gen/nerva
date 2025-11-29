@@ -181,12 +181,42 @@ etc.
 
 Begin the script now:"""
 
-        script = self.llm.generate(
-            prompt=user_prompt,
-            system_prompt=system_prompt,
-            max_tokens=4096,
-            temperature=0.8,
-        )
+        # Reduce max_tokens to speed up generation and reduce memory usage
+        # 3000 tokens ≈ 2250 words, which is enough for a 10-minute podcast
+        # This also reduces API call time and memory footprint
+        max_tokens = min(3000, target_words + 500)  # Cap at 3000, but allow some flexibility
+        
+        print(f"📝 [SCRIPT] Generating script with max_tokens={max_tokens} (target_words={target_words})")
+        
+        try:
+            script = self.llm.generate(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                max_tokens=max_tokens,
+                temperature=0.8,
+            )
+        except Exception as e:
+            error_msg = str(e)
+            print(f"❌ [SCRIPT] LLM generation failed: {error_msg}")
+            # Provide more helpful error message
+            if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                raise RuntimeError(
+                    f"Script generation timed out. The HuggingFace API took too long to respond. "
+                    f"This might be due to high API load. Please try again in a few minutes. "
+                    f"Original error: {error_msg}"
+                )
+            elif "rate limit" in error_msg.lower() or "429" in error_msg:
+                raise RuntimeError(
+                    f"Script generation rate limited. HuggingFace API is currently busy. "
+                    f"Please try again in a few minutes. Original error: {error_msg}"
+                )
+            elif "401" in error_msg or "unauthorized" in error_msg.lower() or "token" in error_msg.lower():
+                raise RuntimeError(
+                    f"Script generation authentication failed. Please check your HuggingFace API token. "
+                    f"Original error: {error_msg}"
+                )
+            else:
+                raise RuntimeError(f"Script generation failed: {error_msg}")
         
         return script.strip()
     

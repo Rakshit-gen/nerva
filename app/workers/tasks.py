@@ -122,6 +122,7 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
     MAX_DURATION_MINUTES = 10  # Hard cap to prevent memory issues
     
     print(f"🚀 [WORKER] Starting job for episode: {episode_id}")
+    print(f"📝 [WORKER] Job ID: {get_current_job().id if get_current_job() else 'N/A'}")
     db = SessionLocal()
     
     try:
@@ -174,7 +175,35 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
         update_job_progress(35, "Generating podcast script")
         update_episode_status(db, episode_id, JobStatus.PROCESSING, 35, "Generating script")
         
+        # MEMORY CHECK: Verify we have enough memory before script generation
+        try:
+            from app.core.model_cache import get_memory_usage_mb
+            import psutil
+            memory_mb = get_memory_usage_mb()
+            memory_percent = psutil.virtual_memory().percent
+            
+            print(f"📊 [WORKER] Memory before script generation: {memory_mb:.1f}MB ({memory_percent:.1f}% system)")
+            
+            if memory_percent > 90:
+                raise RuntimeError(
+                    f"System memory too high ({memory_percent:.1f}%) before script generation. "
+                    f"Worker may crash. Please retry later."
+                )
+            
+            if memory_mb > 450:  # 450MB threshold for 512MB limit
+                print(f"⚠️  [WORKER] High memory usage before script generation: {memory_mb:.1f}MB")
+                # Force garbage collection before proceeding
+                import gc
+                for _ in range(3):
+                    gc.collect()
+                memory_after = get_memory_usage_mb()
+                print(f"📊 [WORKER] Memory after GC: {memory_after:.1f}MB")
+        except ImportError:
+            pass  # psutil not available, skip check
+        
+        print(f"🚀 [WORKER] Starting script generation for episode: {episode_id}")
         script_result = generate_script_sync(episode, content)
+        print(f"✅ [WORKER] Script generation completed successfully")
         
         # Update episode with script (truncate if too long to avoid memory issues)
         script_text = script_result["script"]
