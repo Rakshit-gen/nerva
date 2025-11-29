@@ -57,14 +57,6 @@ class ScriptGenerator:
         Generate a podcast script.
         
         MEMORY CAP: Maximum duration is 10 minutes to prevent OOM crashes.
-        """
-        # Hard cap on duration to prevent memory issues
-        MAX_DURATION_MINUTES = 10
-        if target_duration_minutes > MAX_DURATION_MINUTES:
-            print(f"⚠️  [SCRIPT] Duration capped at {MAX_DURATION_MINUTES} minutes (requested {target_duration_minutes})")
-            target_duration_minutes = MAX_DURATION_MINUTES
-        """
-        Generate a podcast script.
         
         Args:
             title: Episode title
@@ -76,6 +68,11 @@ class ScriptGenerator:
         Returns:
             Dictionary with script and metadata
         """
+        # Hard cap on duration to prevent memory issues
+        MAX_DURATION_MINUTES = 10
+        if target_duration_minutes > MAX_DURATION_MINUTES:
+            print(f"⚠️  [SCRIPT] Duration capped at {MAX_DURATION_MINUTES} minutes (requested {target_duration_minutes})")
+            target_duration_minutes = MAX_DURATION_MINUTES
         # Get relevant chunks if episode has embeddings
         context_chunks = []
         if episode_id:

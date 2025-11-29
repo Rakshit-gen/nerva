@@ -28,7 +28,8 @@ class GoogleTTSService:
     def _get_client(self):
         """Get HTTP client."""
         if self._client is None:
-            self._client = httpx.Client(timeout=60.0)
+            # Increased timeout for large text segments
+            self._client = httpx.Client(timeout=120.0)
         return self._client
     
     def synthesize(
@@ -143,7 +144,8 @@ class ElevenLabsTTSService:
     def _get_client(self):
         """Get HTTP client."""
         if self._client is None:
-            self._client = httpx.Client(timeout=60.0)
+            # Increased timeout for large text segments
+            self._client = httpx.Client(timeout=120.0)
         return self._client
     
     def synthesize(
@@ -321,6 +323,7 @@ class APITTSService:
         segments: list,
         output_dir: str,
         voice_mapping: dict = None,
+        progress_callback=None,
     ) -> list:
         """
         Synthesize multiple segments.
@@ -329,13 +332,18 @@ class APITTSService:
             segments: List of {"speaker": "...", "text": "..."}
             output_dir: Directory for output files
             voice_mapping: Map speaker names to voice IDs
+            progress_callback: Optional callback(completed, total, message) for progress updates
             
         Returns:
             Segments with audio_path added
         """
+        import time
         os.makedirs(output_dir, exist_ok=True)
         voice_mapping = voice_mapping or {}
         results = []
+        
+        total_segments = len(segments)
+        print(f"🎤 [TTS] Synthesizing {total_segments} audio segments...")
         
         for i, segment in enumerate(segments):
             speaker = segment.get("speaker", "Speaker")
@@ -347,25 +355,73 @@ class APITTSService:
             voice_id = voice_mapping.get(speaker, "default_male")
             output_path = os.path.join(output_dir, f"segment_{i:04d}.mp3")
             
-            try:
-                self.synthesize(
-                    text=text,
-                    output_path=output_path,
-                    voice_id=voice_id,
-                )
-                results.append({
-                    **segment,
-                    "index": i,
-                    "audio_path": output_path,
-                })
-            except Exception as e:
-                print(f"Warning: Failed to synthesize segment {i}: {e}")
+            # Progress reporting
+            if progress_callback:
+                progress_callback(i, total_segments, f"Synthesizing segment {i+1}/{total_segments}")
+            elif (i + 1) % 5 == 0 or i == 0:
+                print(f"🎤 [TTS] Processing segment {i+1}/{total_segments} ({speaker})...")
+            
+            # Retry logic for API calls
+            max_retries = 3
+            last_error = None
+            
+            for attempt in range(max_retries):
+                try:
+                    start_time = time.time()
+                    self.synthesize(
+                        text=text,
+                        output_path=output_path,
+                        voice_id=voice_id,
+                    )
+                    elapsed = time.time() - start_time
+                    
+                    if elapsed > 10:  # Log slow API calls
+                        print(f"⏱️  [TTS] Segment {i+1} took {elapsed:.1f}s (slow API response)")
+                    
+                    results.append({
+                        **segment,
+                        "index": i,
+                        "audio_path": output_path,
+                    })
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    last_error = e
+                    error_str = str(e).lower()
+                    
+                    # Check for timeout or rate limit errors
+                    if any(keyword in error_str for keyword in ["timeout", "timed out", "429", "rate limit"]):
+                        if attempt < max_retries - 1:
+                            wait_time = (attempt + 1) * 5
+                            print(f"⏸️  [TTS] Segment {i+1} rate limited/timed out, waiting {wait_time}s before retry {attempt+2}/{max_retries}...")
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            print(f"❌ [TTS] Segment {i+1} failed after {max_retries} attempts: {e}")
+                    else:
+                        # Non-retryable error, break immediately
+                        print(f"❌ [TTS] Segment {i+1} failed: {e}")
+                        break
+            
+            # If all retries failed, add segment with error
+            if last_error and len(results) <= i:
+                print(f"⚠️  [TTS] Skipping segment {i+1} due to persistent errors")
                 results.append({
                     **segment,
                     "index": i,
                     "audio_path": None,
-                    "error": str(e),
+                    "error": str(last_error),
                 })
+        
+        successful = sum(1 for r in results if r.get("audio_path") is not None)
+        print(f"✅ [TTS] Completed: {successful}/{total_segments} segments synthesized successfully")
+        
+        if successful == 0:
+            raise RuntimeError(
+                f"Failed to synthesize any audio segments. "
+                f"Check your TTS API configuration ({self.provider}). "
+                f"Last error: {last_error}"
+            )
         
         return results
     

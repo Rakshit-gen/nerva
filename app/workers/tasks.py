@@ -241,10 +241,23 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
             # Extract parsed_segments before potential deletion
             parsed_segments = script_result.get("parsed_segments", [])
             
+            if not parsed_segments:
+                raise ValueError("No script segments found for audio synthesis")
+            
+            print(f"📊 [WORKER] Synthesizing {len(parsed_segments)} audio segments...")
+            
+            # Progress callback for TTS synthesis
+            def tts_progress(completed, total, message):
+                # Update progress from 55% to 75% based on segment completion
+                progress = 55 + int((completed / total) * 20)  # 55% to 75%
+                update_job_progress(progress, message)
+                update_episode_status(db, episode_id, JobStatus.PROCESSING, progress, message)
+            
             audio_segments = synthesize_audio_sync(
                 parsed_segments,
                 output_dir,
                 episode.personas,
+                progress_callback=tts_progress,
             )
             print(f"✅ [WORKER] Audio segments created: {len(audio_segments)} segments")
             
@@ -567,6 +580,7 @@ def synthesize_audio_sync(
     segments: list,
     output_dir: str,
     personas: list,
+    progress_callback=None,
 ) -> list:
     """Synthesize audio for script segments."""
     from app.services.tts_api import APITTSService
@@ -592,6 +606,7 @@ def synthesize_audio_sync(
             segments=segments,
             output_dir=segments_dir,
             voice_mapping=voice_mapping,
+            progress_callback=progress_callback,
         )
         
         # Cleanup (API service has no model to unload, but close connections)
