@@ -19,25 +19,14 @@ def preload_models():
     if _models_loaded:
         return
     
-    print("🔄 Preloading models at startup...")
-    
-    # Preload embedding model (lighter, always load)
-    try:
-        from app.services.embeddings import EmbeddingService
-        embedding_service = EmbeddingService(use_local=True)
-        # Trigger model load
-        embedding_service._get_local_model()
-        _embedding_model = embedding_service
-        print("✅ Embedding model loaded")
-    except Exception as e:
-        print(f"⚠️  Failed to preload embedding model: {e}")
-    
-    # TTS model is heavy - only preload if we have enough memory
-    # For Render free tier, we'll load it lazily in the worker
+    # DISABLED: Model preloading causes OOM on Render free tier (512MB limit)
+    # Models will be loaded lazily on first use instead
     # This prevents OOM on startup
     
+    print("⚠️  Model preloading disabled (low memory environment)")
+    print("   Models will be loaded lazily on first use")
+    
     _models_loaded = True
-    print("✅ Model preloading complete")
 
 
 def get_embedding_model():

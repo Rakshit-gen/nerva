@@ -21,7 +21,9 @@ WORKER_PID=$!
 echo "Worker started with PID: $WORKER_PID"
 
 # Start web server (this blocks)
-echo "Starting FastAPI web server on port ${PORT:-8000}..."
+# Render sets PORT env var, default to 8000 if not set
+export PORT=${PORT:-8000}
+echo "Starting FastAPI web server on port $PORT..."
 python3 /app/run_server.py
 
 # If web server exits, kill worker

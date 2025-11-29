@@ -28,10 +28,14 @@ def run_worker():
     # SimpleWorker runs jobs in the same process (no forking)
     worker_class = SimpleWorker if sys.platform == 'darwin' else Worker
     
+    # Use unique worker name with PID and timestamp to avoid conflicts
+    import time
+    worker_name = f"podcast-worker-{os.getpid()}-{int(time.time())}"
+    
     worker = worker_class(
         queues,
         connection=conn,
-        name=f"podcast-worker-{os.getpid()}",
+        name=worker_name,
     )
     
     print(f"Starting worker on queue: {settings.WORKER_QUEUE}")
