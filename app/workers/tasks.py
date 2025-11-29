@@ -209,8 +209,11 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
             update_job_progress(55, "Synthesizing speech")
             update_episode_status(db, episode_id, JobStatus.PROCESSING, 55, "Generating audio")
             
+            # Extract parsed_segments before potential deletion
+            parsed_segments = script_result.get("parsed_segments", [])
+            
             audio_segments = synthesize_audio_sync(
-                script_result["parsed_segments"],
+                parsed_segments,
                 output_dir,
                 episode.personas,
             )
@@ -218,6 +221,7 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
             
             # Cleanup script_result after audio synthesis
             del script_result
+            del parsed_segments
             import gc
             gc.collect()
             
@@ -263,10 +267,7 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
         episode.transcript = episode.script  # Reuse script as transcript
         db.commit()
         
-        # Clear script_result from memory after saving
-        del script_result
-        import gc
-        gc.collect()
+        # script_result was already deleted after audio synthesis, no need to delete again
         
         # Step 6: Generate cover (95%) - Optional, don't fail if it errors
         if generate_cover:
