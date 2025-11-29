@@ -8,6 +8,9 @@ venv/
 env/
 ENV/
 .venv
+*.pyc
+*.pyo
+*.pyd
 
 # IDE
 .vscode/
@@ -15,40 +18,96 @@ ENV/
 *.swp
 *.swo
 *~
+.vscode/
+.idea/
+*.sublime-*
 
 # Git
 .git/
 .gitignore
+.gitattributes
+.gitmodules
 
 # Environment
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
 
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
+.pytest_cache/
+.hypothesis/
+tests/
+test_*.py
+*_test.py
 
 # Documentation
 *.md
 !README.md
+docs/
+*.rst
+*.txt
+!requirements*.txt
 
 # Logs
 *.log
 logs/
+*.log.*
 
 # OS
 .DS_Store
 Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 
 # Build artifacts
 dist/
 build/
 *.egg-info/
+.eggs/
+*.egg
+wheelhouse/
 
 # Temporary files
 *.tmp
 *.bak
 *.cache
+*.swp
+*.swo
+*~
+
+# Project specific
+add_indexes.sql
+render.yaml
+docker-compose.yml
+Dockerfile.dev
+.dockerignore
+.gitignore
+
+# Node (if any)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 

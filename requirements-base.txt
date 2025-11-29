@@ -1,0 +1,42 @@
+# Base dependencies - rarely change, cached separately for faster builds
+# Core Framework
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# Database
+sqlalchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Redis & Job Queue
+redis==5.0.1
+rq==1.16.0
+
+# Vector Database
+qdrant-client==1.7.3
+
+# Content Extraction
+httpx==0.26.0
+beautifulsoup4==4.12.3
+youtube-transcript-api==0.6.2
+
+# Text Processing
+tiktoken==0.5.2
+
+# LLM
+huggingface-hub>=0.20.0,<1.0
+
+# Audio Processing
+pydub==0.25.1
+
+# Image Generation
+Pillow>=10.3.0
+
+# Utilities
+python-dotenv==1.0.1
+python-multipart==0.0.9
+boto3==1.34.34
+psutil==5.9.8
+
