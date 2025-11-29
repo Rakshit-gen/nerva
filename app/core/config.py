@@ -46,12 +46,17 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = "llama3"
     USE_OLLAMA: bool = os.getenv("USE_OLLAMA", "false").lower() == "true"
     
-    # TTS - Use a simpler model that doesn't require reference audio
-    # Options: 
-    # - "tts_models/en/vctk/vits" (multiple voices, no ref audio needed, more reliable)
-    # - "tts_models/en/ljspeech/tacotron2-DDC" (fast, but has download issues)
-    # - "tts_models/multilingual/multi-dataset/xtts_v2" (requires reference audio)
-    TTS_MODEL: str = "tts_models/en/vctk/vits"
+    # TTS Configuration
+    # Use API-based TTS to save memory (no local model loading)
+    TTS_PROVIDER: str = os.getenv("TTS_PROVIDER", "google")  # "google", "elevenlabs", or "local"
+    TTS_MODEL: str = "tts_models/en/vctk/vits"  # Only used if TTS_PROVIDER="local"
+    
+    # Google Cloud TTS (free tier: 0-4M characters/month)
+    GOOGLE_TTS_API_KEY: str = os.getenv("GOOGLE_TTS_API_KEY", "")
+    GOOGLE_TTS_PROJECT_ID: str = os.getenv("GOOGLE_TTS_PROJECT_ID", "")
+    
+    # ElevenLabs TTS (free tier: 10k characters/month)
+    ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
     
     # Whisper STT
     WHISPER_MODEL: str = "base"

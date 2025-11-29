@@ -98,6 +98,7 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
     Returns:
         Result dictionary with output URLs
     """
+    print(f"🚀 [WORKER] Starting job for episode: {episode_id}")
     db = SessionLocal()
     
     try:
@@ -106,22 +107,27 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
         if not episode:
             raise ValueError(f"Episode not found: {episode_id}")
         
+        print(f"📝 [WORKER] Episode found: {episode.title}")
+        
         # Update status
         update_episode_status(
             db, episode_id, JobStatus.PROCESSING, 0,
             "Starting processing pipeline"
         )
         update_job_progress(0, "Starting processing pipeline")
+        print(f"✅ [WORKER] Status updated: Starting pipeline")
         
         # Create output directory
         output_dir = os.path.join(settings.OUTPUT_DIR, episode_id)
         os.makedirs(output_dir, exist_ok=True)
         
         # Step 1: Extract content (10%)
+        print(f"📄 [WORKER] Step 1: Extracting content...")
         update_job_progress(5, "Extracting content from source")
         update_episode_status(db, episode_id, JobStatus.PROCESSING, 5, "Extracting content")
         
         content = extract_content_sync(episode)
+        print(f"✅ [WORKER] Content extracted: {len(content)} characters")
         
         update_job_progress(10, "Content extracted")
         update_episode_status(db, episode_id, JobStatus.PROCESSING, 10, "Content extracted")
@@ -143,7 +149,7 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
         
         # Update episode with script (truncate if too long to avoid memory issues)
         script_text = script_result["script"]
-        max_script_length = 100000  # ~100KB limit
+        max_script_length = 50000  # Reduced to 50KB to save memory
         if len(script_text) > max_script_length:
             script_text = script_text[:max_script_length] + "\n\n[Script truncated due to length]"
         
@@ -163,6 +169,7 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
         # Audio synthesis using TTS (Coqui XTTS) and pydub for mixing
         audio_available = False
         try:
+            print(f"🎤 [WORKER] Step 4: Synthesizing audio...")
             update_job_progress(55, "Synthesizing speech")
             update_episode_status(db, episode_id, JobStatus.PROCESSING, 55, "Generating audio")
             
@@ -171,6 +178,7 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
                 output_dir,
                 episode.personas,
             )
+            print(f"✅ [WORKER] Audio segments created: {len(audio_segments)} segments")
             
             update_job_progress(75, "Speech synthesis complete")
             
@@ -253,6 +261,7 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
                 # Continue without cover
         
         # Complete
+        print(f"🎉 [WORKER] Job completed successfully for episode: {episode_id}")
         update_job_progress(100, "Episode complete")
         update_episode_status(
             db, episode_id, JobStatus.COMPLETED, 100,
@@ -275,7 +284,9 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
             pass
         
         error_msg = str(e)
-        print(f"Error processing episode {episode_id}: {error_msg}")
+        print(f"❌ [WORKER] ERROR processing episode {episode_id}: {error_msg}")
+        import traceback
+        print(f"❌ [WORKER] Traceback:\n{traceback.format_exc()}")
         
         # Try to update status, but use a fresh session if current one is invalid
         try:
@@ -455,10 +466,13 @@ def synthesize_audio_sync(
     personas: list,
 ) -> list:
     """Synthesize audio for script segments."""
-    from app.services.tts import TTSService
+    from app.services.tts_api import APITTSService
+    from app.core.config import settings
     import gc
     
-    tts = TTSService()
+    # Use API-based TTS to save memory (no local model loading)
+    # Falls back to local TTS if API is not configured
+    tts = APITTSService()
     
     try:
         # Build voice mapping from personas
@@ -477,12 +491,21 @@ def synthesize_audio_sync(
             voice_mapping=voice_mapping,
         )
         
-        return result
-    finally:
-        # Unload TTS model to free memory
-        tts.unload_model()
+        # Cleanup (API service has no model to unload, but close connections)
+        tts.close()
         del tts
         gc.collect()
+        
+        return result
+    except Exception as e:
+        # Ensure cleanup even on error
+        try:
+            tts.close()
+        except:
+            pass
+        del tts
+        gc.collect()
+        raise
 
 
 def mix_audio_sync(segments: list, output_dir: str) -> Dict[str, Any]:

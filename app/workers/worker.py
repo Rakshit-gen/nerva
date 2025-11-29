@@ -38,8 +38,10 @@ def run_worker():
         name=worker_name,
     )
     
-    print(f"Starting worker on queue: {settings.WORKER_QUEUE}")
-    print(f"Redis URL: {settings.REDIS_URL[:20]}...")
+    print(f"🚀 [WORKER] Starting worker on queue: {settings.WORKER_QUEUE}")
+    print(f"🔗 [WORKER] Redis URL: {settings.REDIS_URL[:20]}...")
+    print(f"👷 [WORKER] Worker name: {worker_name}")
+    print(f"✅ [WORKER] Worker ready, waiting for jobs...")
     
     worker.work(with_scheduler=True)
 

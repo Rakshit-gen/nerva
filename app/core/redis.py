@@ -54,12 +54,15 @@ def get_queue(name: str = None) -> Queue:
 def enqueue_job(func, *args, **kwargs):
     """Enqueue a job to the default queue."""
     queue = get_queue()
+    print(f"📤 [API] Enqueueing job: {func.__name__} with args={args}, kwargs={kwargs}")
     job = queue.enqueue(
         func,
         *args,
         job_timeout=settings.JOB_TIMEOUT,
         **kwargs,
     )
+    print(f"✅ [API] Job enqueued successfully: {job.id}")
+    print(f"📊 [API] Queue length: {len(queue)}")
     return job.id
 
 

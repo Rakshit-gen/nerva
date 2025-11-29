@@ -69,9 +69,8 @@ class AudioMixer:
         # Create pause segment
         pause = AudioSegment.silent(duration=pause_between_segments)
         
-        # Add each segment - process in chunks to avoid memory issues
+        # Add each segment - process one at a time to minimize memory
         segments_added = 0
-        max_segments_in_memory = 5  # Process in chunks
         
         for i, segment in enumerate(segments):
             audio_path = segment.get("audio_path")
@@ -79,17 +78,18 @@ class AudioMixer:
                 continue
             
             try:
-                # Load segment
+                # Load segment, add to combined, then immediately delete
                 segment_audio = AudioSegment.from_file(audio_path)
                 combined = combined + pause + segment_audio
                 segments_added += 1
                 
-                # Periodically force garbage collection for long podcasts
-                if segments_added % max_segments_in_memory == 0:
+                # Immediately delete segment from memory after adding
+                del segment_audio
+                
+                # Force garbage collection every 3 segments
+                if segments_added % 3 == 0:
                     import gc
                     gc.collect()
-                    # Clear segment from memory after adding
-                    del segment_audio
                     
             except Exception as e:
                 print(f"Warning: Could not add segment: {e}")

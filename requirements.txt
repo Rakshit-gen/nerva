@@ -30,7 +30,8 @@ tiktoken==0.5.2
 huggingface-hub>=0.20.0,<1.0  # Compatible with transformers, will upgrade separately if needed
 
 # Text-to-Speech
-TTS==0.22.0
+TTS==0.22.0  # Only needed if using local TTS (fallback)
+# API-based TTS uses httpx (already included) - no additional dependencies needed
 
 # Audio Processing
 pydub==0.25.1

@@ -100,7 +100,10 @@ class TTSService:
         Returns:
             Path to generated audio file
         """
-        tts = self._get_tts()
+        import torch
+        # Use no_grad to save memory during inference
+        with torch.no_grad():
+            tts = self._get_tts()
         
         # Ensure output directory exists
         output_dir = os.path.dirname(output_path)
@@ -203,9 +206,10 @@ class TTSService:
         
         results = []
         
-        # Process segments in batches to avoid memory buildup
-        batch_size = 10
+        # Process segments in smaller batches to reduce memory usage
+        batch_size = 5  # Reduced from 10 to save memory
         import gc
+        import torch
         
         for batch_start in range(0, len(segments), batch_size):
             batch = segments[batch_start:batch_start + batch_size]
@@ -262,8 +266,10 @@ class TTSService:
                         "error": str(e),
                     })
             
-            # Force garbage collection after each batch
+            # Force garbage collection and clear PyTorch cache after each batch
             gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         
         return results
     
