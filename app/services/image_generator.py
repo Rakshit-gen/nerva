@@ -19,15 +19,31 @@ class ImageGenerator:
         Initialize image generator.
         
         Args:
-            use_local: Use local SDXL model (requires GPU)
+            use_local: Use local SDXL model (DISABLED - causes OOM crashes)
         """
-        self.use_local = use_local
+        # FORCE API usage - local models cause server crashes
+        if use_local:
+            raise ValueError(
+                "Local image generation is disabled to prevent server crashes. "
+                "Please use HuggingFace API by setting use_local=False. "
+                "Ensure HF_API_TOKEN is set in environment variables."
+            )
+        
+        self.use_local = False  # Force API only
         self.model_id = settings.SDXL_MODEL
         self.hf_token = settings.HF_API_TOKEN
+        
+        if not self.hf_token:
+            raise ValueError(
+                "HF_API_TOKEN is required for image generation. "
+                "Local models are disabled to prevent server crashes."
+            )
+        
         self.api_url = f"https://api-inference.huggingface.co/models/{self.model_id}"
         
         self._local_pipe = None
         self._http_client = None
+        print("✅ [IMAGE] Using HuggingFace API (no local model)")
     
     def _get_http_client(self):
         """Get HTTP client for API requests."""
@@ -37,25 +53,13 @@ class ImageGenerator:
         return self._http_client
     
     def _get_local_pipeline(self):
-        """Load local SDXL pipeline."""
-        if self._local_pipe is None:
-            try:
-                from diffusers import StableDiffusionXLPipeline
-                import torch
-                
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                
-                self._local_pipe = StableDiffusionXLPipeline.from_pretrained(
-                    self.model_id,
-                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                    use_safetensors=True,
-                )
-                self._local_pipe.to(device)
-                
-            except ImportError:
-                raise RuntimeError("diffusers not installed")
-        
-        return self._local_pipe
+        """Load local SDXL pipeline - DISABLED to save memory."""
+        # DISABLED: Local model loading causes OOM crashes
+        raise RuntimeError(
+            "Local image generation model is disabled to prevent server crashes. "
+            "Please use HuggingFace API instead. "
+            "Ensure HF_API_TOKEN is set and use_local=False."
+        )
     
     def generate(
         self,
@@ -82,13 +86,14 @@ class ImageGenerator:
         """
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
+        # FORCE API usage - local models disabled to prevent crashes
         if self.use_local:
-            return self._generate_local(
-                prompt, output_path, negative_prompt,
-                width, height, num_inference_steps
+            raise RuntimeError(
+                "Local image generation is disabled to prevent server crashes. "
+                "Please use HuggingFace API. Ensure HF_API_TOKEN is set."
             )
-        else:
-            return self._generate_api(prompt, output_path, negative_prompt)
+        
+        return self._generate_api(prompt, output_path, negative_prompt)
     
     def _generate_api(
         self,

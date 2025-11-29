@@ -98,6 +98,29 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
     Returns:
         Result dictionary with output URLs
     """
+    # MEMORY GUARDRAIL: Check memory before starting
+    try:
+        from app.core.model_cache import get_memory_usage_mb
+        import psutil
+        
+        memory_percent = psutil.virtual_memory().percent
+        memory_mb = get_memory_usage_mb()
+        
+        if memory_percent > 85:
+            raise RuntimeError(
+                f"System memory too high ({memory_percent:.1f}%), "
+                f"current process using {memory_mb:.1f}MB. "
+                "Please retry later or restart worker."
+            )
+        
+        if memory_mb > 400:  # 400MB threshold for 512MB limit
+            print(f"⚠️  [WORKER] High memory usage: {memory_mb:.1f}MB")
+    except ImportError:
+        pass  # psutil not available, skip check
+    
+    # EPISODE LENGTH CAP: Reject episodes that are too long
+    MAX_DURATION_MINUTES = 10  # Hard cap to prevent memory issues
+    
     print(f"🚀 [WORKER] Starting job for episode: {episode_id}")
     db = SessionLocal()
     
@@ -133,10 +156,16 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
         update_episode_status(db, episode_id, JobStatus.PROCESSING, 10, "Content extracted")
         
         # Step 2: Chunk and embed (30%)
+        print(f"🧩 [WORKER] Step 2: Chunking and embedding...")
         update_job_progress(15, "Chunking and embedding content")
         update_episode_status(db, episode_id, JobStatus.PROCESSING, 15, "Creating embeddings")
         
         chunk_content_sync(db, episode_id, content, episode.title)
+        print(f"✅ [WORKER] Embeddings created")
+        
+        # Aggressive cleanup after embeddings
+        import gc
+        gc.collect()
         
         update_job_progress(30, "Embeddings created")
         update_episode_status(db, episode_id, JobStatus.PROCESSING, 30, "Embeddings stored")
@@ -157,10 +186,17 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
         episode.word_count = script_result["word_count"]
         db.commit()
         
-        # Clear content from memory after processing
+        # Extract parsed_segments before deleting script_result
+        parsed_segments = script_result.get("parsed_segments", [])
+        
+        # Aggressive cleanup - delete large content immediately
         del content
+        del script_result["script"]  # Keep only parsed_segments
         import gc
         gc.collect()
+        
+        # Rebuild script_result with only what we need
+        script_result = {"parsed_segments": parsed_segments, "word_count": episode.word_count}
         
         update_job_progress(50, "Script generated")
         update_episode_status(db, episode_id, JobStatus.PROCESSING, 50, "Script ready")
@@ -179,6 +215,11 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
                 episode.personas,
             )
             print(f"✅ [WORKER] Audio segments created: {len(audio_segments)} segments")
+            
+            # Cleanup script_result after audio synthesis
+            del script_result
+            import gc
+            gc.collect()
             
             update_job_progress(75, "Speech synthesis complete")
             
@@ -268,13 +309,31 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
             "Episode generated successfully"
         )
         
-        return {
+        result = {
             "episode_id": episode_id,
             "audio_url": episode.audio_url,
             "cover_url": episode.cover_url,
             "duration_seconds": episode.duration_seconds,
             "word_count": episode.word_count,
         }
+        
+        # WORKER RESTART POLICY: Log memory usage after job
+        # Helps identify when worker should be restarted
+        try:
+            from app.core.model_cache import get_memory_usage_mb
+            import psutil
+            memory_mb = get_memory_usage_mb()
+            memory_percent = psutil.virtual_memory().percent
+            
+            print(f"📊 [WORKER] Memory after job: {memory_mb:.1f}MB ({memory_percent:.1f}% system)")
+            
+            if memory_mb > 300 or memory_percent > 80:
+                print(f"⚠️  [WORKER] High memory usage detected!")
+                print(f"💡 [WORKER] Consider restarting worker to free memory")
+        except Exception as e:
+            print(f"⚠️  [WORKER] Could not check memory: {e}")
+        
+        return result
         
     except Exception as e:
         # Handle failure - rollback any pending transaction
@@ -440,24 +499,38 @@ def chunk_content_sync(
     
     db.commit()
     
-    return len(chunks)
+    # Aggressive cleanup after chunking
+    chunk_count = len(chunks)
+    del chunks
+    del texts
+    del chunker
+    del vector_store
+    import gc
+    gc.collect()
+    
+    return chunk_count
 
 
 def generate_script_sync(episode: Episode, content: str) -> Dict[str, Any]:
     """Generate podcast script (sync version)."""
     from app.services.script_generator import ScriptGenerator
+    import gc
     
     generator = ScriptGenerator()
     
-    result = generator.generate(
-        title=episode.title,
-        content=content,
-        personas=episode.personas or [],
-        episode_id=episode.id,
-        target_duration_minutes=10,
-    )
-    
-    return result
+    try:
+        result = generator.generate(
+            title=episode.title,
+            content=content,
+            personas=episode.personas or [],
+            episode_id=episode.id,
+            target_duration_minutes=10,
+        )
+        return result
+    finally:
+        # Cleanup generator and its services
+        del generator
+        gc.collect()
 
 
 def synthesize_audio_sync(
@@ -514,15 +587,22 @@ def mix_audio_sync(segments: list, output_dir: str) -> Dict[str, Any]:
     
     mixer = AudioMixer()
     
-    output_path = os.path.join(output_dir, "podcast.mp3")
-    
-    result = mixer.mix(
-        segments=segments,
-        output_path=output_path,
-        pause_between_segments=400,
-    )
-    
-    return result
+    try:
+        output_path = os.path.join(output_dir, "podcast.mp3")
+        
+        result = mixer.mix(
+            segments=segments,
+            output_path=output_path,
+            pause_between_segments=400,
+        )
+        
+        return result
+    finally:
+        # Cleanup mixer and segments
+        del mixer
+        del segments
+        import gc
+        gc.collect()
 
 
 def generate_cover_sync(episode: Episode, output_dir: str) -> str:

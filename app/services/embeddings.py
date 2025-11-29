@@ -36,11 +36,14 @@ class EmbeddingService:
         return self._http_client
     
     def _get_local_model(self):
-        """Load local sentence-transformers model."""
-        if self._local_model is None:
-            from sentence_transformers import SentenceTransformer
-            self._local_model = SentenceTransformer(self.model_name)
-        return self._local_model
+        """Load local sentence-transformers model - DISABLED to save memory."""
+        # DISABLED: Local model loading causes OOM crashes
+        # Always use API instead
+        raise RuntimeError(
+            "Local embedding model loading is disabled to prevent server crashes. "
+            "Please use HuggingFace API by setting use_local=False. "
+            "Ensure HF_API_TOKEN is set in environment variables."
+        )
     
     def embed(self, text: str) -> List[float]:
         """
@@ -71,10 +74,15 @@ class EmbeddingService:
         # Clean texts
         texts = [self._clean_text(t) for t in texts]
         
+        # FORCE API usage - local models cause server crashes
         if self.use_local:
-            return self._embed_local(texts)
-        else:
-            return self._embed_api(texts)
+            raise RuntimeError(
+                "Local embedding model is disabled to prevent server crashes. "
+                "Please use HuggingFace API by setting use_local=False. "
+                "Ensure HF_API_TOKEN is set in environment variables."
+            )
+        
+        return self._embed_api(texts)
     
     def _clean_text(self, text: str) -> str:
         """Clean text for embedding."""

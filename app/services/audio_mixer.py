@@ -69,6 +69,25 @@ class AudioMixer:
         # Create pause segment
         pause = AudioSegment.silent(duration=pause_between_segments)
         
+        # STREAMING APPROACH: Use ffmpeg to concatenate files directly
+        # This avoids loading all audio into memory
+        try:
+            import subprocess
+            # Check if ffmpeg is available
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+            use_ffmpeg = True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            use_ffmpeg = False
+            print("⚠️  ffmpeg not found, falling back to pydub (uses more memory)")
+        
+        if use_ffmpeg:
+            # Use ffmpeg for streaming concatenation (memory efficient)
+            return self._mix_with_ffmpeg(
+                segments, output_path, pause_between_segments,
+                intro_audio, outro_audio, background_music, music_volume
+            )
+        
+        # Fallback to pydub (less memory efficient but works)
         # Add each segment - process one at a time to minimize memory
         segments_added = 0
         
@@ -143,6 +162,135 @@ class AudioMixer:
             "segments_count": segments_added,
             "file_size_bytes": os.path.getsize(output_path),
         }
+    
+    def _mix_with_ffmpeg(
+        self,
+        segments: List[Dict[str, Any]],
+        output_path: str,
+        pause_between_segments: int,
+        intro_audio: str = None,
+        outro_audio: str = None,
+        background_music: str = None,
+        music_volume: float = 0.1,
+    ) -> Dict[str, Any]:
+        """
+        Mix audio using ffmpeg (streaming, memory efficient).
+        This avoids loading all audio into RAM.
+        """
+        import subprocess
+        import tempfile
+        
+        # Create temporary file list for ffmpeg concat
+        concat_file = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
+        concat_path = concat_file.name
+        
+        segments_added = 0
+        total_duration = 0
+        
+        try:
+            # Write file list for ffmpeg concat demuxer
+            if intro_audio and os.path.exists(intro_audio):
+                concat_file.write(f"file '{os.path.abspath(intro_audio)}'\n")
+            
+            # Add pause as silent audio file
+            pause_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+            pause_path = pause_file.name
+            pause_file.close()
+            
+            # Generate silent pause using ffmpeg
+            subprocess.run([
+                "ffmpeg", "-f", "lavfi", "-i", f"anullsrc=r=22050:cl=mono",
+                "-t", str(pause_between_segments / 1000.0),
+                "-y", pause_path
+            ], capture_output=True, check=True)
+            
+            # Add segments with pauses
+            for segment in segments:
+                audio_path = segment.get("audio_path")
+                if not audio_path or not os.path.exists(audio_path):
+                    continue
+                
+                # Add pause before segment (except first)
+                if segments_added > 0 or (intro_audio and os.path.exists(intro_audio)):
+                    concat_file.write(f"file '{os.path.abspath(pause_path)}'\n")
+                
+                # Add segment
+                concat_file.write(f"file '{os.path.abspath(audio_path)}'\n")
+                segments_added += 1
+                
+                # Get duration for total
+                try:
+                    result = subprocess.run([
+                        "ffprobe", "-v", "error", "-show_entries",
+                        "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
+                        audio_path
+                    ], capture_output=True, text=True, check=True)
+                    total_duration += float(result.stdout.strip())
+                except:
+                    pass
+            
+            # Add outro
+            if outro_audio and os.path.exists(outro_audio):
+                concat_file.write(f"file '{os.path.abspath(pause_path)}'\n")
+                concat_file.write(f"file '{os.path.abspath(outro_audio)}'\n")
+            
+            concat_file.close()
+            
+            # Use ffmpeg concat demuxer (streaming, no memory buffering)
+            cmd = [
+                "ffmpeg", "-f", "concat", "-safe", "0",
+                "-i", concat_path,
+                "-c", "copy",  # Stream copy (no re-encoding)
+                "-y", output_path
+            ]
+            
+            # If background music, need to mix (requires re-encoding)
+            if background_music and os.path.exists(background_music):
+                # Two-pass: first concat, then mix with music
+                temp_output = output_path + ".temp.mp3"
+                subprocess.run(cmd, check=True, capture_output=True)
+                
+                # Mix with background music
+                subprocess.run([
+                    "ffmpeg", "-i", temp_output, "-i", background_music,
+                    "-filter_complex", f"[1:a]volume={music_volume}[music];[0:a][music]amix=inputs=2:duration=first",
+                    "-y", output_path
+                ], check=True, capture_output=True)
+                
+                os.remove(temp_output)
+            else:
+                # Just concat (fastest, no re-encoding)
+                subprocess.run(cmd, check=True, capture_output=True)
+            
+            # Convert to MP3 if needed (ffmpeg concat might output different format)
+            if not output_path.endswith('.mp3'):
+                mp3_output = output_path.replace('.wav', '.mp3')
+                subprocess.run([
+                    "ffmpeg", "-i", output_path,
+                    "-codec:a", "libmp3lame", "-b:a", "192k",
+                    "-y", mp3_output
+                ], check=True, capture_output=True)
+                if os.path.exists(mp3_output):
+                    os.replace(mp3_output, output_path)
+            
+            # Get final file size
+            file_size = os.path.getsize(output_path)
+            
+            return {
+                "output_path": output_path,
+                "duration_ms": int(total_duration * 1000),
+                "duration_seconds": total_duration,
+                "segments_count": segments_added,
+                "file_size_bytes": file_size,
+            }
+            
+        finally:
+            # Cleanup temp files
+            try:
+                os.unlink(concat_path)
+                os.unlink(pause_path)
+            except:
+                pass
     
     def normalize_audio(
         self,

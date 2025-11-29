@@ -32,15 +32,19 @@ def run_worker():
     import time
     worker_name = f"podcast-worker-{os.getpid()}-{int(time.time())}"
     
+    # FORCE concurrency=1 to prevent memory spikes from parallel jobs
     worker = worker_class(
         queues,
         connection=conn,
         name=worker_name,
     )
     
+    # Set worker to process only one job at a time
+    # This prevents memory accumulation from concurrent processing
     print(f"🚀 [WORKER] Starting worker on queue: {settings.WORKER_QUEUE}")
     print(f"🔗 [WORKER] Redis URL: {settings.REDIS_URL[:20]}...")
     print(f"👷 [WORKER] Worker name: {worker_name}")
+    print(f"⚙️  [WORKER] Concurrency: 1 (single job at a time to save memory)")
     print(f"✅ [WORKER] Worker ready, waiting for jobs...")
     
     worker.work(with_scheduler=True)

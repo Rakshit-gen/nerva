@@ -230,24 +230,41 @@ class APITTSService:
     def _get_service(self):
         """Get TTS service instance."""
         if self._service is None:
-            try:
-                if self.provider == "google":
+            if self.provider == "google":
+                # Strict: If Google TTS is configured, require API key
+                if not settings.GOOGLE_TTS_API_KEY:
+                    raise ValueError(
+                        "TTS_PROVIDER is set to 'google' but GOOGLE_TTS_API_KEY is not set. "
+                        "Please set GOOGLE_TTS_API_KEY or change TTS_PROVIDER to 'local'."
+                    )
+                try:
                     self._service = GoogleTTSService()
-                    print("✅ [TTS] Using Google Cloud TTS API")
-                elif self.provider == "elevenlabs":
+                    print("✅ [TTS] Using Google Cloud TTS API (no local model download)")
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to initialize Google TTS API: {e}. "
+                        "Check your GOOGLE_TTS_API_KEY and API configuration."
+                    )
+            elif self.provider == "elevenlabs":
+                # Strict: If ElevenLabs is configured, require API key
+                if not settings.ELEVENLABS_API_KEY:
+                    raise ValueError(
+                        "TTS_PROVIDER is set to 'elevenlabs' but ELEVENLABS_API_KEY is not set. "
+                        "Please set ELEVENLABS_API_KEY or change TTS_PROVIDER to 'local'."
+                    )
+                try:
                     self._service = ElevenLabsTTSService()
-                    print("✅ [TTS] Using ElevenLabs TTS API")
-                else:
-                    # Fallback to local TTS
-                    from app.services.tts import TTSService
-                    self._service = TTSService()
-                    print("⚠️  [TTS] Using local TTS (API not configured)")
-            except (ValueError, Exception) as e:
-                print(f"⚠️  [TTS] API TTS failed: {e}, falling back to local")
-                # Fallback to local TTS
+                    print("✅ [TTS] Using ElevenLabs TTS API (no local model download)")
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to initialize ElevenLabs TTS API: {e}. "
+                        "Check your ELEVENLABS_API_KEY and API configuration."
+                    )
+            else:
+                # Only use local TTS if explicitly set to "local"
+                print("⚠️  [TTS] Using local TTS (will download model on first use)")
                 from app.services.tts import TTSService
                 self._service = TTSService()
-                self._fallback_service = self._service
         
         return self._service
     
@@ -288,18 +305,15 @@ class APITTSService:
                 language=language or "en-US",
             )
         except Exception as e:
-            # If API fails and we haven't tried fallback, try local
-            if self._fallback_service is None and self.provider != "local":
-                print(f"⚠️  [TTS] API synthesis failed: {e}, trying local fallback")
-                from app.services.tts import TTSService
-                self._fallback_service = TTSService()
-                return self._fallback_service.synthesize(
-                    text=text,
-                    output_path=output_path,
-                    voice_id=voice_id,
-                    language=language,
-                    speaker_wav=speaker_wav,
-                )
+            # If API is configured, don't fall back to local (saves memory)
+            # Only fall back if explicitly set to "local"
+            if self.provider in ["google", "elevenlabs"]:
+                raise RuntimeError(
+                    f"TTS API ({self.provider}) failed: {e}. "
+                    "Check your API key and network connection. "
+                    "Local TTS fallback disabled to save memory."
+                ) from e
+            # Only allow fallback if provider is "local" or not set
             raise
     
     def synthesize_segments(

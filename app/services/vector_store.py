@@ -47,7 +47,8 @@ class VectorStore:
         """
         self.collection_name = collection_name or settings.QDRANT_COLLECTION
         self.client = get_qdrant_client()
-        self.embedding_service = embedding_service or EmbeddingService()
+        # FORCE API usage - never load local embedding model
+        self.embedding_service = embedding_service or EmbeddingService(use_local=False)
         
         # Ensure collection exists
         self._ensure_collection()

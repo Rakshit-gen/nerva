@@ -11,6 +11,9 @@ _tts_model = None
 _embedding_model = None
 _models_loaded = False
 
+# Export _embedding_model for cleanup
+__all__ = ['get_embedding_model', 'clear_model_cache', 'get_memory_usage_mb', '_embedding_model']
+
 
 def preload_models():
     """Preload heavy models at startup to avoid per-request loading."""
@@ -30,11 +33,13 @@ def preload_models():
 
 
 def get_embedding_model():
-    """Get cached embedding model."""
+    """Get cached embedding model - API ONLY (no local model loading)."""
     global _embedding_model
     if _embedding_model is None:
         from app.services.embeddings import EmbeddingService
-        _embedding_model = EmbeddingService(use_local=True)
+        # FORCE API usage - never load local model (saves ~200-500MB)
+        _embedding_model = EmbeddingService(use_local=False)
+        print("✅ [EMBEDDINGS] Using HuggingFace API (no local model)")
     return _embedding_model
 
 
