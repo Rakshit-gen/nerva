@@ -218,22 +218,65 @@ class ContentExtractor:
             return full_text
             
         except TranscriptsDisabled:
-            raise ValueError("Transcripts are disabled for this YouTube video. Please enable captions on the video.")
+            raise ValueError(
+                "Transcripts are disabled for this YouTube video. "
+                "The video owner has not enabled captions/subtitles. "
+                "Please try a different video that has captions enabled, or use a different content source."
+            )
         except NoTranscriptFound:
-            raise ValueError("No transcript found for this YouTube video. The video may not have captions enabled.")
+            raise ValueError(
+                "No transcript found for this YouTube video. "
+                "The video may not have captions enabled. "
+                "Please try a different video that has captions, or use a different content source."
+            )
         except VideoUnavailable:
-            raise ValueError("This YouTube video is unavailable, private, or has been deleted.")
+            raise ValueError(
+                "This YouTube video is unavailable, private, or has been deleted. "
+                "Please check the video URL and try again."
+            )
         except ValueError as e:
             # Re-raise ValueError as-is
             raise
         except Exception as e:
-            error_msg = str(e)
-            if "could not be retrieved" in error_msg.lower():
-                raise ValueError("Could not retrieve transcript. The video may be private or unavailable.")
-            elif "transcript" in error_msg.lower():
-                raise ValueError(f"Transcript error: {error_msg}")
+            error_msg = str(e).lower()
+            
+            # Check for common error patterns
+            if "subtitles are disabled" in error_msg or "transcripts are disabled" in error_msg:
+                raise ValueError(
+                    "Subtitles are disabled for this YouTube video. "
+                    "The video owner has not enabled captions. "
+                    "Please try a different video that has captions enabled, or use Text/URL/PDF as your content source instead."
+                )
+            elif "could not retrieve" in error_msg or "could not be retrieved" in error_msg:
+                if "subtitles are disabled" in error_msg:
+                    raise ValueError(
+                        "Subtitles are disabled for this YouTube video. "
+                        "Please try a video that has captions enabled, or use a different content source."
+                    )
+                else:
+                    raise ValueError(
+                        "Could not retrieve transcript. The video may be private, unavailable, or have restricted access. "
+                        "Please try a different video or use Text/URL/PDF as your content source."
+                    )
+            elif "transcript" in error_msg:
+                if "disabled" in error_msg or "not available" in error_msg:
+                    raise ValueError(
+                        "Transcripts are not available for this video. "
+                        "Please try a video with captions enabled, or use a different content source."
+                    )
+                else:
+                    raise ValueError(f"Transcript error: {str(e)}")
+            elif "private" in error_msg or "unavailable" in error_msg:
+                raise ValueError(
+                    "This YouTube video is private or unavailable. "
+                    "Please use a public video or try a different content source."
+                )
             else:
-                raise ValueError(f"Failed to extract YouTube transcript: {error_msg}")
+                raise ValueError(
+                    f"Failed to extract YouTube transcript: {str(e)}. "
+                    "This may be because the video doesn't have captions enabled. "
+                    "Please try a different video or use Text/URL/PDF as your content source."
+                )
     
     def _extract_youtube_id(self, url: str) -> Optional[str]:
         """Extract video ID from YouTube URL."""

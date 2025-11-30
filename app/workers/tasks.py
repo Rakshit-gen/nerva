@@ -202,7 +202,46 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
             pass  # psutil not available, skip check
         
         print(f"🚀 [WORKER] Starting script generation for episode: {episode_id}")
-        script_result = generate_script_sync(episode, content)
+        
+        # Add timeout wrapper for script generation (10 minutes max)
+        import signal
+        import threading
+        
+        script_result = None
+        generation_error = None
+        generation_complete = threading.Event()
+        
+        def run_generation():
+            nonlocal script_result, generation_error
+            try:
+                script_result = generate_script_sync(episode, content)
+                generation_complete.set()
+            except Exception as e:
+                generation_error = e
+                generation_complete.set()
+        
+        generation_thread = threading.Thread(target=run_generation)
+        generation_thread.daemon = True
+        generation_thread.start()
+        
+        # Wait with timeout (10 minutes = 600 seconds)
+        if not generation_complete.wait(timeout=600.0):
+            # Timeout occurred
+            print(f"❌ [WORKER] Script generation timed out after 10 minutes")
+            update_episode_status(
+                db, episode_id, JobStatus.FAILED, 35,
+                "Script generation timed out after 10 minutes",
+                error="Script generation exceeded maximum time limit. The LLM API may be slow or unresponsive."
+            )
+            raise RuntimeError("Script generation timed out after 10 minutes")
+        
+        if generation_error:
+            print(f"❌ [WORKER] Script generation failed: {generation_error}")
+            raise generation_error
+        
+        if not script_result:
+            raise RuntimeError("Script generation returned None result")
+        
         print(f"✅ [WORKER] Script generation completed successfully")
         
         # Update episode with script (truncate if too long to avoid memory issues)

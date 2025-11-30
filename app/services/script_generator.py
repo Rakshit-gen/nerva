@@ -219,19 +219,33 @@ etc.
 Begin the script now (all dialogue must be in {lang_name}):"""
 
         # Reduce max_tokens to speed up generation and reduce memory usage
-        # 3000 tokens ≈ 2250 words, which is enough for a 10-minute podcast
-        # This also reduces API call time and memory footprint
-        max_tokens = min(3000, target_words + 500)  # Cap at 3000, but allow some flexibility
+        # 2500 tokens ≈ 1875 words, which is enough for a 10-minute podcast
+        # Reduced further to prevent timeouts and speed up API calls
+        max_tokens = min(2500, target_words + 300)  # Cap at 2500 for faster generation
         
         print(f"📝 [SCRIPT] Generating script with max_tokens={max_tokens} (target_words={target_words})")
+        print(f"🌐 [SCRIPT] Language: {lang_name} ({language})")
+        print(f"📊 [SCRIPT] Prompt length: {len(user_prompt)} chars, System prompt: {len(system_prompt)} chars")
         
         try:
+            import time
+            start_time = time.time()
+            print(f"🔄 [SCRIPT] Calling LLM API...")
+            
             script = self.llm.generate(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
                 max_tokens=max_tokens,
                 temperature=0.8,
             )
+            
+            elapsed = time.time() - start_time
+            print(f"✅ [SCRIPT] LLM API call completed in {elapsed:.1f}s")
+            
+            if not script or len(script.strip()) < 50:
+                raise RuntimeError(f"LLM returned empty or too short script ({len(script) if script else 0} chars)")
+            
+            print(f"📝 [SCRIPT] Generated script length: {len(script)} characters")
         except Exception as e:
             error_msg = str(e)
             print(f"❌ [SCRIPT] LLM generation failed: {error_msg}")
