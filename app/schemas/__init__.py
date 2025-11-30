@@ -26,16 +26,18 @@ class PersonaConfig(BaseModel):
     """Configuration for a podcast persona/speaker."""
     name: str = Field(..., min_length=1, max_length=100)
     role: str = Field(default="host", description="Role: host, guest, narrator")
+    gender: Optional[str] = Field(default=None, description="Gender: male, female, neutral")
     voice_id: Optional[str] = Field(default=None, description="Voice ID for TTS")
-    personality: Optional[str] = Field(default=None, description="Personality description")
+    personality: Optional[str] = Field(default=None, description="Personality description with speaking style, tone, and traits")
     
     class Config:
         json_schema_extra = {
             "example": {
                 "name": "Alex",
                 "role": "host",
+                "gender": "male",
                 "voice_id": "default_male",
-                "personality": "friendly and curious"
+                "personality": "Friendly and curious, speaks with enthusiasm and asks thoughtful questions. Uses casual language and occasional humor."
             }
         }
 

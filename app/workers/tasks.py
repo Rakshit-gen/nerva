@@ -592,13 +592,39 @@ def synthesize_audio_sync(
     tts = APITTSService()
     
     try:
-        # Build voice mapping from personas
+        # Build voice mapping from personas using gender field
+        # Ensure each persona gets a unique voice, even with multiple personas of same gender
         voice_mapping = {}
+        # Available voice options for each gender (in order of preference)
+        male_voices = ["default_male", "male_2", "male_3", "male_4"]
+        female_voices = ["default_female", "female_2", "female_3", "female_4"]
+        neutral_voices = ["default_male", "default_female", "male_2", "female_2"]
+        
+        # Track voice usage per gender to ensure uniqueness
+        gender_voice_counters = {"male": 0, "female": 0, "neutral": 0}
+        
         for i, persona in enumerate(personas or []):
             name = persona.get("name", f"Speaker{i}")
-            # Alternate between male and female voices
-            voice_id = "default_male" if i % 2 == 0 else "default_female"
+            gender = persona.get("gender", "").lower() or "male"  # Default to male if not specified
+            
+            # Select voice based on gender
+            if gender == "female":
+                voice_list = female_voices
+                gender_key = "female"
+            elif gender == "neutral":
+                voice_list = neutral_voices
+                gender_key = "neutral"
+            else:
+                voice_list = male_voices
+                gender_key = "male"
+            
+            # Get next voice from the list for this gender (ensures uniqueness)
+            voice_index = gender_voice_counters[gender_key] % len(voice_list)
+            voice_id = voice_list[voice_index]
+            gender_voice_counters[gender_key] += 1
+            
             voice_mapping[name] = voice_id
+            print(f"🎤 [VOICE] Assigned {voice_id} to {name} (gender: {gender}, index: {voice_index})")
         
         segments_dir = os.path.join(output_dir, "segments")
         

@@ -122,13 +122,25 @@ class ScriptGenerator:
         }
     
     def _format_personas(self, personas: List[Dict[str, Any]]) -> str:
-        """Format personas for the prompt."""
+        """Format personas for the prompt with enhanced personality descriptions."""
         lines = []
         for p in personas:
             name = p.get("name", "Speaker")
             role = p.get("role", "host")
             personality = p.get("personality", "friendly and engaging")
-            lines.append(f"- {name} ({role}): {personality}")
+            gender = p.get("gender", "")
+            
+            # Build comprehensive persona description
+            persona_desc = f"{name} ({role})"
+            if gender:
+                persona_desc += f" - {gender} voice"
+            persona_desc += f": {personality}"
+            
+            # If personality is too short, enhance it
+            if len(personality.split()) < 5:
+                persona_desc += ". Speaks naturally and engages in conversation."
+            
+            lines.append(f"- {persona_desc}")
         return "\n".join(lines)
     
     def _generate_script(
@@ -146,18 +158,21 @@ class ScriptGenerator:
         system_prompt = """You are an expert podcast script writer. Your job is to create engaging, natural-sounding podcast dialogue based on provided content.
 
 Guidelines:
-- Write natural, conversational dialogue
+- Write natural, conversational dialogue that reflects each speaker's unique personality
+- Each speaker should have a distinct voice and speaking style based on their personality description
+- Include personality-specific phrases, expressions, and speech patterns mentioned in the persona descriptions
 - Include smooth transitions between topics
-- Add personality through natural speech patterns
-- Include occasional interruptions, agreements, and reactions
+- Add personality through natural speech patterns, tone, and word choice
+- Include occasional interruptions, agreements, reactions, and natural conversation flow
 - Avoid being dry or overly formal
 - Make complex topics accessible
+- Vary sentence length and structure to match each speaker's style
 - Include brief introductions and conclusions
 
 Format each line as:
 SPEAKER_NAME: Dialogue text here.
 
-Always start with an introduction and end with a conclusion/outro."""
+Always start with an introduction and end with a conclusion/outro. Make sure each speaker's dialogue reflects their described personality, speaking style, and typical phrases."""
 
         user_prompt = f"""Create a podcast script for an episode titled "{title}".
 
