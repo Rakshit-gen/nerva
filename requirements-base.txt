@@ -21,6 +21,7 @@ qdrant-client==1.7.3
 httpx==0.26.0
 beautifulsoup4==4.12.3
 youtube-transcript-api==0.6.2
+PyMuPDF==1.23.8  # PDF extraction
 
 # Text Processing
 tiktoken==0.5.2

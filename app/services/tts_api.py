@@ -360,6 +360,7 @@ class APITTSService:
         segments: list,
         output_dir: str,
         voice_mapping: dict = None,
+        language: str = "en",
         progress_callback=None,
     ) -> list:
         """
@@ -398,6 +399,24 @@ class APITTSService:
             elif (i + 1) % 5 == 0 or i == 0:
                 print(f"🎤 [TTS] Processing segment {i+1}/{total_segments} ({speaker})...")
             
+            # Map language code to TTS language format
+            # Convert simple codes (en, es, fr) to full codes (en-US, es-ES, fr-FR)
+            language_map = {
+                "en": "en-US",
+                "es": "es-ES",
+                "fr": "fr-FR",
+                "de": "de-DE",
+                "it": "it-IT",
+                "pt": "pt-BR",
+                "ja": "ja-JP",
+                "zh": "zh-CN",
+                "ko": "ko-KR",
+                "ru": "ru-RU",
+                "ar": "ar-XA",
+                "hi": "hi-IN",
+            }
+            tts_language = language_map.get(language.lower(), language_map.get("en", "en-US"))
+            
             # Retry logic for API calls
             max_retries = 3
             last_error = None
@@ -409,6 +428,7 @@ class APITTSService:
                         text=text,
                         output_path=output_path,
                         voice_id=voice_id,
+                        language=tts_language,
                     )
                     elapsed = time.time() - start_time
                     

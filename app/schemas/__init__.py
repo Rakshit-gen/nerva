@@ -51,6 +51,8 @@ class EpisodeCreateRequest(BaseModel):
     source_url: Optional[str] = Field(default=None, description="URL for youtube/url sources")
     source_content: Optional[str] = Field(default=None, description="Raw text or base64 PDF")
     
+    language: Optional[str] = Field(default="en", description="Language code (e.g., en, es, fr, de, it, pt, ja, zh)")
+    
     personas: List[PersonaConfig] = Field(
         default_factory=lambda: [
             PersonaConfig(name="Alex", role="host"),

@@ -70,6 +70,9 @@ class Episode(Base):
     source_url = Column(Text, nullable=True)
     source_content = Column(Text, nullable=True)
     
+    # Language
+    language = Column(String(10), default="en", nullable=False)  # Language code (en, es, fr, etc.)
+    
     # Generated content
     script = Column(Text, nullable=True)
     transcript = Column(Text, nullable=True)

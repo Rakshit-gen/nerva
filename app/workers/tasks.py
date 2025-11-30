@@ -257,7 +257,8 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
                 parsed_segments,
                 output_dir,
                 episode.personas,
-                progress_callback=tts_progress,
+                getattr(episode, 'language', 'en') or 'en',
+                tts_progress,
             )
             print(f"✅ [WORKER] Audio segments created: {len(audio_segments)} segments")
             
@@ -568,6 +569,7 @@ def generate_script_sync(episode: Episode, content: str) -> Dict[str, Any]:
             personas=episode.personas or [],
             episode_id=episode.id,
             target_duration_minutes=10,
+            language=getattr(episode, 'language', 'en') or 'en',
         )
         return result
     finally:
@@ -580,6 +582,7 @@ def synthesize_audio_sync(
     segments: list,
     output_dir: str,
     personas: list,
+    language: str = "en",
     progress_callback=None,
 ) -> list:
     """Synthesize audio for script segments."""
@@ -632,6 +635,7 @@ def synthesize_audio_sync(
             segments=segments,
             output_dir=segments_dir,
             voice_mapping=voice_mapping,
+            language=language,
             progress_callback=progress_callback,
         )
         
