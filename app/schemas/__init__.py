@@ -26,18 +26,16 @@ class PersonaConfig(BaseModel):
     """Configuration for a podcast persona/speaker."""
     name: str = Field(..., min_length=1, max_length=100)
     role: str = Field(default="host", description="Role: host, guest, narrator")
-    gender: Optional[str] = Field(default=None, description="Gender: male, female, neutral")
     voice_id: Optional[str] = Field(default=None, description="Voice ID for TTS")
-    personality: Optional[str] = Field(default=None, description="Personality description with speaking style, tone, and traits")
+    personality: Optional[str] = Field(default=None, description="Personality description")
     
     class Config:
         json_schema_extra = {
             "example": {
                 "name": "Alex",
                 "role": "host",
-                "gender": "male",
                 "voice_id": "default_male",
-                "personality": "Friendly and curious, speaks with enthusiasm and asks thoughtful questions. Uses casual language and occasional humor."
+                "personality": "friendly and curious"
             }
         }
 
@@ -50,8 +48,6 @@ class EpisodeCreateRequest(BaseModel):
     source_type: ContentSourceType
     source_url: Optional[str] = Field(default=None, description="URL for youtube/url sources")
     source_content: Optional[str] = Field(default=None, description="Raw text or base64 PDF")
-    
-    language: Optional[str] = Field(default="en", description="Language code (e.g., en, es, fr, de, it, pt, ja, zh)")
     
     personas: List[PersonaConfig] = Field(
         default_factory=lambda: [

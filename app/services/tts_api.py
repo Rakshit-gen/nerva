@@ -52,40 +52,13 @@ class GoogleTTSService:
             Path to generated audio file
         """
         # Map voice_id to Google voice names
-        # Using WaveNet voices for more natural, human-like sound
-        # Higher quality voices with better prosody and naturalness
         voice_map = {
             "default_male": {
-                "name": "en-US-Wavenet-D",  # WaveNet for more natural sound
+                "name": "en-US-Neural2-D",
                 "ssml_gender": "MALE",
             },
             "default_female": {
-                "name": "en-US-Wavenet-F",  # WaveNet for more natural sound
-                "ssml_gender": "FEMALE",
-            },
-            # Additional voice options for variety - using different WaveNet voices
-            "male_2": {
-                "name": "en-US-Wavenet-J",  # Different male voice
-                "ssml_gender": "MALE",
-            },
-            "female_2": {
-                "name": "en-US-Wavenet-C",  # Different female voice
-                "ssml_gender": "FEMALE",
-            },
-            "male_3": {
-                "name": "en-US-Wavenet-A",  # Another male voice option
-                "ssml_gender": "MALE",
-            },
-            "female_3": {
-                "name": "en-US-Wavenet-E",  # Another female voice option
-                "ssml_gender": "FEMALE",
-            },
-            "male_4": {
-                "name": "en-US-Wavenet-B",  # Fourth male voice option
-                "ssml_gender": "MALE",
-            },
-            "female_4": {
-                "name": "en-US-Wavenet-G",  # Fourth female voice option
+                "name": "en-US-Neural2-F",
                 "ssml_gender": "FEMALE",
             },
         }
@@ -108,10 +81,7 @@ class GoogleTTSService:
             },
             "audioConfig": {
                 "audioEncoding": "MP3",
-                "sampleRateHertz": 44100,  # Higher sample rate for better quality
-                "speakingRate": 1.0,  # Normal speaking rate
-                "pitch": 0.0,  # Neutral pitch for natural sound
-                "volumeGainDb": 0.0,  # Normal volume
+                "sampleRateHertz": 24000,
             },
         }
         
@@ -198,17 +168,10 @@ class ElevenLabsTTSService:
             Path to generated audio file
         """
         # Map voice_id to ElevenLabs voice IDs
-        # Using high-quality voices for natural, human-like sound
+        # Default voices (free tier compatible)
         voice_map = {
-            "default_male": "pNInz6obpgDQGcFmaJgB",  # Adam - natural male voice
-            "default_female": "EXAVITQu4vr4xnSDxMaL",  # Bella - natural female voice
-            # Additional voice options for variety - all high-quality voices
-            "male_2": "21m00Tcm4TlvDq8ikWAM",  # Rachel - alternative voice
-            "female_2": "AZnzlk1XvdvUeBnXmlld",  # Domi - alternative female voice
-            "male_3": "ErXwobaYiN019PkySvjV",  # Antoni - another male option
-            "female_3": "MF3mGyEYCl7XYWbV9V6O",  # Elli - another female option
-            "male_4": "TxGEqnHWrfWFTfGW9XjX",  # Josh - fourth male option
-            "female_4": "VR6AewLTigWG4xSOukaG",  # Arnold - alternative voice
+            "default_male": "pNInz6obpgDQGcFmaJgB",  # Adam
+            "default_female": "EXAVITQu4vr4xnSDxMaL",  # Bella
         }
         
         voice_id_elevenlabs = voice_map.get(voice_id, voice_map["default_male"])
@@ -224,10 +187,10 @@ class ElevenLabsTTSService:
         
         payload = {
             "text": text,
-            "model_id": "eleven_multilingual_v2",  # Use multilingual v2 for better quality and naturalness
+            "model_id": "eleven_monolingual_v1",
             "voice_settings": {
-                "stability": 0.65,  # Higher stability (0.0-1.0) for more consistent, natural delivery
-                "similarity_boost": 0.8,  # Higher similarity (0.0-1.0) for more human-like voice matching
+                "stability": 0.5,
+                "similarity_boost": 0.5,
             },
         }
         
@@ -360,7 +323,6 @@ class APITTSService:
         segments: list,
         output_dir: str,
         voice_mapping: dict = None,
-        language: str = "en",
         progress_callback=None,
     ) -> list:
         """
@@ -399,24 +361,6 @@ class APITTSService:
             elif (i + 1) % 5 == 0 or i == 0:
                 print(f"🎤 [TTS] Processing segment {i+1}/{total_segments} ({speaker})...")
             
-            # Map language code to TTS language format
-            # Convert simple codes (en, es, fr) to full codes (en-US, es-ES, fr-FR)
-            language_map = {
-                "en": "en-US",
-                "es": "es-ES",
-                "fr": "fr-FR",
-                "de": "de-DE",
-                "it": "it-IT",
-                "pt": "pt-BR",
-                "ja": "ja-JP",
-                "zh": "zh-CN",
-                "ko": "ko-KR",
-                "ru": "ru-RU",
-                "ar": "ar-XA",
-                "hi": "hi-IN",
-            }
-            tts_language = language_map.get(language.lower(), language_map.get("en", "en-US"))
-            
             # Retry logic for API calls
             max_retries = 3
             last_error = None
@@ -428,7 +372,6 @@ class APITTSService:
                         text=text,
                         output_path=output_path,
                         voice_id=voice_id,
-                        language=tts_language,
                     )
                     elapsed = time.time() - start_time
                     

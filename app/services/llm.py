@@ -38,14 +38,10 @@ class LLMService:
         self.hf_token = settings.HF_API_TOKEN
         self.hf_model = settings.HF_LLM_MODEL
         
-        # Initialize HuggingFace client with timeout
+        # Initialize HuggingFace client
         self._hf_client = None
         if HF_HUB_AVAILABLE and self.hf_token:
-            # Set timeout to prevent hanging (120 seconds)
-            self._hf_client = InferenceClient(
-                token=self.hf_token,
-                timeout=120.0,  # 2 minute timeout
-            )
+            self._hf_client = InferenceClient(token=self.hf_token)
         
         self._http_client = None
     
@@ -160,54 +156,12 @@ class LLMService:
                     
                     # Use chat completion API with timeout
                     try:
-                        # Set a timeout using threading to prevent hanging
-                        import threading
-                        import queue
-                        
-                        response_queue = queue.Queue()
-                        error_queue = queue.Queue()
-                        
-                        def make_request():
-                            try:
-                                result = self._hf_client.chat_completion(
-                                    messages=messages,
-                                    model=self.hf_model,
-                                    max_tokens=max_tokens,
-                                    temperature=temperature,
-                                )
-                                response_queue.put(result)
-                            except Exception as e:
-                                error_queue.put(e)
-                        
-                        # Run in thread with timeout
-                        thread = threading.Thread(target=make_request, daemon=True)
-                        thread.start()
-                        thread.join(timeout=120.0)  # 2 minute hard timeout
-                        
-                        if thread.is_alive():
-                            # Thread is still running, request timed out
-                            print(f"⏱️  [LLM] Request timed out after 120 seconds")
-                            raise TimeoutError("HuggingFace API request timed out after 120 seconds")
-                        
-                        # Check for errors
-                        if not error_queue.empty():
-                            error = error_queue.get()
-                            raise error
-                        
-                        # Get response
-                        if response_queue.empty():
-                            raise RuntimeError("HuggingFace API returned no response")
-                        
-                        response = response_queue.get()
-                            
-                    except TimeoutError as timeout_error:
-                        if attempt < max_retries - 1:
-                            wait_time = (attempt + 1) * 10
-                            print(f"⏱️  [LLM] API timeout, waiting {wait_time}s before retry...")
-                            time.sleep(wait_time)
-                            continue
-                        else:
-                            raise RuntimeError(f"HuggingFace API timeout after {max_retries} attempts: {timeout_error}")
+                        response = self._hf_client.chat_completion(
+                            messages=messages,
+                            model=self.hf_model,
+                            max_tokens=max_tokens,
+                            temperature=temperature,
+                        )
                     except Exception as api_error:
                         # Check for timeout or connection errors
                         error_str = str(api_error).lower()

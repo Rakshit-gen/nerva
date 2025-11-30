@@ -202,46 +202,7 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
             pass  # psutil not available, skip check
         
         print(f"🚀 [WORKER] Starting script generation for episode: {episode_id}")
-        
-        # Add timeout wrapper for script generation (10 minutes max)
-        import signal
-        import threading
-        
-        script_result = None
-        generation_error = None
-        generation_complete = threading.Event()
-        
-        def run_generation():
-            nonlocal script_result, generation_error
-            try:
-                script_result = generate_script_sync(episode, content)
-                generation_complete.set()
-            except Exception as e:
-                generation_error = e
-                generation_complete.set()
-        
-        generation_thread = threading.Thread(target=run_generation)
-        generation_thread.daemon = True
-        generation_thread.start()
-        
-        # Wait with timeout (10 minutes = 600 seconds)
-        if not generation_complete.wait(timeout=600.0):
-            # Timeout occurred
-            print(f"❌ [WORKER] Script generation timed out after 10 minutes")
-            update_episode_status(
-                db, episode_id, JobStatus.FAILED, 35,
-                "Script generation timed out after 10 minutes",
-                error="Script generation exceeded maximum time limit. The LLM API may be slow or unresponsive."
-            )
-            raise RuntimeError("Script generation timed out after 10 minutes")
-        
-        if generation_error:
-            print(f"❌ [WORKER] Script generation failed: {generation_error}")
-            raise generation_error
-        
-        if not script_result:
-            raise RuntimeError("Script generation returned None result")
-        
+        script_result = generate_script_sync(episode, content)
         print(f"✅ [WORKER] Script generation completed successfully")
         
         # Update episode with script (truncate if too long to avoid memory issues)
@@ -296,8 +257,7 @@ def process_episode_task(episode_id: str, generate_cover: bool = True) -> Dict[s
                 parsed_segments,
                 output_dir,
                 episode.personas,
-                getattr(episode, 'language', 'en') or 'en',
-                tts_progress,
+                progress_callback=tts_progress,
             )
             print(f"✅ [WORKER] Audio segments created: {len(audio_segments)} segments")
             
@@ -608,7 +568,6 @@ def generate_script_sync(episode: Episode, content: str) -> Dict[str, Any]:
             personas=episode.personas or [],
             episode_id=episode.id,
             target_duration_minutes=10,
-            language=getattr(episode, 'language', 'en') or 'en',
         )
         return result
     finally:
@@ -621,7 +580,6 @@ def synthesize_audio_sync(
     segments: list,
     output_dir: str,
     personas: list,
-    language: str = "en",
     progress_callback=None,
 ) -> list:
     """Synthesize audio for script segments."""
@@ -634,39 +592,13 @@ def synthesize_audio_sync(
     tts = APITTSService()
     
     try:
-        # Build voice mapping from personas using gender field
-        # Ensure each persona gets a unique voice, even with multiple personas of same gender
+        # Build voice mapping from personas
         voice_mapping = {}
-        # Available voice options for each gender (in order of preference)
-        male_voices = ["default_male", "male_2", "male_3", "male_4"]
-        female_voices = ["default_female", "female_2", "female_3", "female_4"]
-        neutral_voices = ["default_male", "default_female", "male_2", "female_2"]
-        
-        # Track voice usage per gender to ensure uniqueness
-        gender_voice_counters = {"male": 0, "female": 0, "neutral": 0}
-        
         for i, persona in enumerate(personas or []):
             name = persona.get("name", f"Speaker{i}")
-            gender = persona.get("gender", "").lower() or "male"  # Default to male if not specified
-            
-            # Select voice based on gender
-            if gender == "female":
-                voice_list = female_voices
-                gender_key = "female"
-            elif gender == "neutral":
-                voice_list = neutral_voices
-                gender_key = "neutral"
-            else:
-                voice_list = male_voices
-                gender_key = "male"
-            
-            # Get next voice from the list for this gender (ensures uniqueness)
-            voice_index = gender_voice_counters[gender_key] % len(voice_list)
-            voice_id = voice_list[voice_index]
-            gender_voice_counters[gender_key] += 1
-            
+            # Alternate between male and female voices
+            voice_id = "default_male" if i % 2 == 0 else "default_female"
             voice_mapping[name] = voice_id
-            print(f"🎤 [VOICE] Assigned {voice_id} to {name} (gender: {gender}, index: {voice_index})")
         
         segments_dir = os.path.join(output_dir, "segments")
         
@@ -674,7 +606,6 @@ def synthesize_audio_sync(
             segments=segments,
             output_dir=segments_dir,
             voice_mapping=voice_mapping,
-            language=language,
             progress_callback=progress_callback,
         )
         

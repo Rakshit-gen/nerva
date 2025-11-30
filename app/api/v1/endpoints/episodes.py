@@ -42,7 +42,6 @@ async def create_episode(
         source_type=ModelContentSourceType(request.source_type.value),
         source_url=request.source_url,
         source_content=request.source_content,
-        language=request.language or "en",
         personas=[p.model_dump() if hasattr(p, 'model_dump') else p for p in request.personas],
         status=JobStatus.PENDING,
         progress=0,

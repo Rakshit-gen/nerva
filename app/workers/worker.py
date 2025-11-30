@@ -86,7 +86,7 @@ def run_worker():
     conn = redis_connection()
     
     queues = [Queue(settings.WORKER_QUEUE, connection=conn)]
-    
+        
     # Use SimpleWorker on macOS to avoid fork() issues
     # SimpleWorker runs jobs in the same process (no forking)
     worker_class = SimpleWorker if sys.platform == 'darwin' else Worker
@@ -97,8 +97,8 @@ def run_worker():
     
     # FORCE concurrency=1 to prevent memory spikes from parallel jobs
     worker = worker_class(
-        queues,
-        connection=conn,
+            queues,
+            connection=conn,
         name=worker_name,
     )
     

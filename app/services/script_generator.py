@@ -52,7 +52,6 @@ class ScriptGenerator:
         personas: List[Dict[str, Any]],
         episode_id: str = None,
         target_duration_minutes: int = 10,
-        language: str = "en",
     ) -> Dict[str, Any]:
         """
         Generate a podcast script.
@@ -109,7 +108,6 @@ class ScriptGenerator:
             persona_desc=persona_desc,
             personas=personas,
             target_words=target_words,
-            language=language,
         )
         
         # Parse and validate script
@@ -124,25 +122,13 @@ class ScriptGenerator:
         }
     
     def _format_personas(self, personas: List[Dict[str, Any]]) -> str:
-        """Format personas for the prompt with enhanced personality descriptions."""
+        """Format personas for the prompt."""
         lines = []
         for p in personas:
             name = p.get("name", "Speaker")
             role = p.get("role", "host")
             personality = p.get("personality", "friendly and engaging")
-            gender = p.get("gender", "")
-            
-            # Build comprehensive persona description
-            persona_desc = f"{name} ({role})"
-            if gender:
-                persona_desc += f" - {gender} voice"
-            persona_desc += f": {personality}"
-            
-            # If personality is too short, enhance it
-            if len(personality.split()) < 5:
-                persona_desc += ". Speaks naturally and engages in conversation."
-            
-            lines.append(f"- {persona_desc}")
+            lines.append(f"- {name} ({role}): {personality}")
         return "\n".join(lines)
     
     def _generate_script(
@@ -152,54 +138,28 @@ class ScriptGenerator:
         persona_desc: str,
         personas: List[Dict[str, Any]],
         target_words: int,
-        language: str = "en",
     ) -> str:
         """Generate the podcast script using LLM."""
         
         persona_names = [p.get("name", f"Speaker{i}") for i, p in enumerate(personas)]
         
-        # Language-specific instructions
-        language_names = {
-            "en": "English",
-            "es": "Spanish",
-            "fr": "French",
-            "de": "German",
-            "it": "Italian",
-            "pt": "Portuguese",
-            "ja": "Japanese",
-            "zh": "Chinese",
-            "ko": "Korean",
-            "ru": "Russian",
-            "ar": "Arabic",
-            "hi": "Hindi",
-        }
-        lang_name = language_names.get(language, "English")
-        
-        system_prompt = f"""You are an expert podcast script writer. Your job is to create engaging, natural-sounding podcast dialogue based on provided content.
-
-IMPORTANT: Write the entire script in {lang_name} ({language}). All dialogue must be in {lang_name}.
+        system_prompt = """You are an expert podcast script writer. Your job is to create engaging, natural-sounding podcast dialogue based on provided content.
 
 Guidelines:
-- Write natural, conversational dialogue that reflects each speaker's unique personality
-- Each speaker should have a distinct voice and speaking style based on their personality description
-- Include personality-specific phrases, expressions, and speech patterns mentioned in the persona descriptions
+- Write natural, conversational dialogue
 - Include smooth transitions between topics
-- Add personality through natural speech patterns, tone, and word choice
-- Include occasional interruptions, agreements, reactions, and natural conversation flow
+- Add personality through natural speech patterns
+- Include occasional interruptions, agreements, and reactions
 - Avoid being dry or overly formal
 - Make complex topics accessible
-- Vary sentence length and structure to match each speaker's style
 - Include brief introductions and conclusions
-- Use natural {lang_name} expressions and idioms when appropriate
 
 Format each line as:
 SPEAKER_NAME: Dialogue text here.
 
-Always start with an introduction and end with a conclusion/outro. Make sure each speaker's dialogue reflects their described personality, speaking style, and typical phrases. Write everything in {lang_name}."""
+Always start with an introduction and end with a conclusion/outro."""
 
         user_prompt = f"""Create a podcast script for an episode titled "{title}".
-
-LANGUAGE: Write everything in {lang_name} ({language}).
 
 SPEAKERS:
 {persona_desc}
@@ -209,43 +169,29 @@ SOURCE CONTENT:
 
 TARGET LENGTH: Approximately {target_words} words
 
-Write an engaging podcast script in {lang_name} where the speakers discuss the key points from the source content. Make it conversational and interesting. Use natural {lang_name} expressions.
+Write an engaging podcast script where the speakers discuss the key points from the source content. Make it conversational and interesting.
 
 Remember to format as:
-{persona_names[0]}: [dialogue in {lang_name}]
-{persona_names[1] if len(persona_names) > 1 else persona_names[0]}: [dialogue in {lang_name}]
+{persona_names[0]}: [dialogue]
+{persona_names[1] if len(persona_names) > 1 else persona_names[0]}: [dialogue]
 etc.
 
-Begin the script now (all dialogue must be in {lang_name}):"""
+Begin the script now:"""
 
         # Reduce max_tokens to speed up generation and reduce memory usage
-        # 2500 tokens ≈ 1875 words, which is enough for a 10-minute podcast
-        # Reduced further to prevent timeouts and speed up API calls
-        max_tokens = min(2500, target_words + 300)  # Cap at 2500 for faster generation
+        # 3000 tokens ≈ 2250 words, which is enough for a 10-minute podcast
+        # This also reduces API call time and memory footprint
+        max_tokens = min(3000, target_words + 500)  # Cap at 3000, but allow some flexibility
         
         print(f"📝 [SCRIPT] Generating script with max_tokens={max_tokens} (target_words={target_words})")
-        print(f"🌐 [SCRIPT] Language: {lang_name} ({language})")
-        print(f"📊 [SCRIPT] Prompt length: {len(user_prompt)} chars, System prompt: {len(system_prompt)} chars")
         
         try:
-            import time
-            start_time = time.time()
-            print(f"🔄 [SCRIPT] Calling LLM API...")
-            
             script = self.llm.generate(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
                 max_tokens=max_tokens,
                 temperature=0.8,
             )
-            
-            elapsed = time.time() - start_time
-            print(f"✅ [SCRIPT] LLM API call completed in {elapsed:.1f}s")
-            
-            if not script or len(script.strip()) < 50:
-                raise RuntimeError(f"LLM returned empty or too short script ({len(script) if script else 0} chars)")
-            
-            print(f"📝 [SCRIPT] Generated script length: {len(script)} characters")
         except Exception as e:
             error_msg = str(e)
             print(f"❌ [SCRIPT] LLM generation failed: {error_msg}")
